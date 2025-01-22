@@ -27,22 +27,29 @@
       </property>
       <property name="mode" type="uint" value="0"/>
       <property name="autohide-behavior" type="uint" value="0"/>
-      <property name="background-style" type="uint" value="1"/>
+      <property name="background-style" type="uint" value="0"/>
       <property name="background-image" type="string" value="file:///home/hoolies/Downloads/void.png"/>
       <property name="background-rgba" type="array">
-        <value type="double" value="0.23921568627450981"/>
-        <value type="double" value="0.2196078431372549"/>
-        <value type="double" value="0.27450980392156865"/>
+        <value type="double" value="0.22166666666666668"/>
+        <value type="double" value="0.38803333333333334"/>
+        <value type="double" value="0.58333333333333337"/>
         <value type="double" value="1"/>
       </property>
-      <property name="enter-opacity" type="uint" value="33"/>
-      <property name="leave-opacity" type="uint" value="90"/>
+      <property name="enter-opacity" type="uint" value="100"/>
+      <property name="leave-opacity" type="uint" value="84"/>
     </property>
   </property>
   <property name="plugins" type="empty">
     <property name="plugin-2" type="string" value="tasklist">
       <property name="grouping" type="uint" value="1"/>
       <property name="show-labels" type="bool" value="false"/>
+      <property name="sort-order" type="uint" value="1"/>
+      <property name="middle-click" type="uint" value="1"/>
+      <property name="include-all-monitors" type="bool" value="true"/>
+      <property name="include-all-workspaces" type="bool" value="true"/>
+      <property name="flat-buttons" type="bool" value="true"/>
+      <property name="show-handle" type="bool" value="false"/>
+      <property name="show-tooltips" type="bool" value="true"/>
     </property>
     <property name="plugin-3" type="string" value="separator">
       <property name="expand" type="bool" value="true"/>
