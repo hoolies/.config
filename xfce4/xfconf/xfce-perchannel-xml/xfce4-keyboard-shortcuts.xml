@@ -40,7 +40,7 @@
       <property name="&lt;Shift&gt;&lt;Super&gt;t" type="string" value="thunar"/>
       <property name="&lt;Shift&gt;&lt;Super&gt;e" type="string" value="xfce4-session-logout"/>
       <property name="&lt;Super&gt;Return" type="string" value="/bin/alacritty"/>
-      <property name="&lt;Shift&gt;&lt;Super&gt;f" type="string" value="/usr/bin/firefox-wayland"/>
+      <property name="&lt;Shift&gt;&lt;Super&gt;b" type="string" value="/usr/bin/firefox-wayland"/>
       <property name="&lt;Super&gt;space" type="string" value="/usr/bin/dmenu_run"/>
     </property>
   </property>
@@ -140,8 +140,8 @@
       <property name="&lt;Super&gt;1" type="string" value="workspace_1_key"/>
       <property name="&lt;Super&gt;2" type="string" value="workspace_2_key"/>
       <property name="&lt;Super&gt;3" type="string" value="workspace_3_key"/>
-      <property name="&lt;Super&gt;f" type="string" value="fullscreen_key"/>
-      <property name="&lt;Super&gt;s" type="string" value="maximize_window_key"/>
+      <property name="&lt;Super&gt;Shift&gt;f" type="string" value="fullscreen_key"/>
+      <property name="&lt;Super&gt;f" type="string" value="maximize_window_key"/>
     </property>
   </property>
   <property name="providers" type="array">
