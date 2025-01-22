@@ -12,7 +12,9 @@
       <property name="icon-size" type="uint" value="16"/>
       <property name="size" type="uint" value="26"/>
       <property name="plugin-ids" type="array">
-        <value type="int" value="4"/>
+        <value type="int" value="1"/>
+        <value type="int" value="16"/>
+        <value type="int" value="15"/>
         <value type="int" value="2"/>
         <value type="int" value="5"/>
         <value type="int" value="3"/>
@@ -55,13 +57,15 @@
       <property name="expand" type="bool" value="true"/>
       <property name="style" type="uint" value="0"/>
     </property>
-    <property name="plugin-4" type="string" value="pager"/>
     <property name="plugin-5" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
     </property>
     <property name="plugin-6" type="string" value="systray">
       <property name="square-icons" type="bool" value="true"/>
       <property name="known-legacy-items" type="array">
+        <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (71%)"/>
+        <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (87%)"/>
+        <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (79%)"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (75%)"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (50%)"/>
         <value type="string" value="wi-fi network connection “undernet” active: undernet (83%)"/>
@@ -110,6 +114,16 @@
       <property name="button-title" type="uint" value="3"/>
       <property name="appearance" type="uint" value="1"/>
       <property name="custom-title" type="string" value="⏻ "/>
+    </property>
+    <property name="plugin-1" type="string" value="directorymenu">
+      <property name="base-directory" type="string" value="/home/hoolies"/>
+    </property>
+    <property name="plugin-15" type="string" value="separator">
+      <property name="expand" type="bool" value="false"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-16" type="string" value="separator">
+      <property name="style" type="uint" value="0"/>
     </property>
   </property>
 </channel>

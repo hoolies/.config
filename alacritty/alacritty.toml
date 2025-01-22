@@ -29,7 +29,7 @@ mouse = { enabled = true }
 
 [window]
 decorations = "None"
-opacity = 0.67
+opacity = 1
 startup_mode = "Fullscreen"
 
 [bell]
