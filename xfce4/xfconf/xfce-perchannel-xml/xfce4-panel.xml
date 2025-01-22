@@ -12,26 +12,37 @@
       <property name="icon-size" type="uint" value="16"/>
       <property name="size" type="uint" value="26"/>
       <property name="plugin-ids" type="array">
-        <value type="int" value="2"/>
-        <value type="int" value="3"/>
         <value type="int" value="4"/>
+        <value type="int" value="2"/>
         <value type="int" value="5"/>
+        <value type="int" value="3"/>
         <value type="int" value="6"/>
         <value type="int" value="8"/>
         <value type="int" value="9"/>
         <value type="int" value="10"/>
-        <value type="int" value="11"/>
         <value type="int" value="12"/>
+        <value type="int" value="11"/>
         <value type="int" value="13"/>
         <value type="int" value="14"/>
       </property>
       <property name="mode" type="uint" value="0"/>
-      <property name="autohide-behavior" type="uint" value="2"/>
+      <property name="autohide-behavior" type="uint" value="0"/>
+      <property name="background-style" type="uint" value="1"/>
+      <property name="background-image" type="string" value="file:///home/hoolies/Downloads/void.png"/>
+      <property name="background-rgba" type="array">
+        <value type="double" value="0.23921568627450981"/>
+        <value type="double" value="0.2196078431372549"/>
+        <value type="double" value="0.27450980392156865"/>
+        <value type="double" value="1"/>
+      </property>
+      <property name="enter-opacity" type="uint" value="33"/>
+      <property name="leave-opacity" type="uint" value="90"/>
     </property>
   </property>
   <property name="plugins" type="empty">
     <property name="plugin-2" type="string" value="tasklist">
       <property name="grouping" type="uint" value="1"/>
+      <property name="show-labels" type="bool" value="false"/>
     </property>
     <property name="plugin-3" type="string" value="separator">
       <property name="expand" type="bool" value="true"/>
@@ -69,10 +80,29 @@
     </property>
     <property name="plugin-12" type="string" value="clock">
       <property name="mode" type="uint" value="2"/>
+      <property name="digital-layout" type="uint" value="0"/>
     </property>
     <property name="plugin-13" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
     </property>
-    <property name="plugin-14" type="string" value="actions"/>
+    <property name="plugin-14" type="string" value="actions">
+      <property name="items" type="array">
+        <value type="string" value="+lock-screen"/>
+        <value type="string" value="+switch-user"/>
+        <value type="string" value="+separator"/>
+        <value type="string" value="+suspend"/>
+        <value type="string" value="+hibernate"/>
+        <value type="string" value="-hybrid-sleep"/>
+        <value type="string" value="-separator"/>
+        <value type="string" value="+shutdown"/>
+        <value type="string" value="+restart"/>
+        <value type="string" value="+separator"/>
+        <value type="string" value="+logout"/>
+        <value type="string" value="-logout-dialog"/>
+      </property>
+      <property name="button-title" type="uint" value="3"/>
+      <property name="appearance" type="uint" value="1"/>
+      <property name="custom-title" type="string" value="⏻ "/>
+    </property>
   </property>
 </channel>
