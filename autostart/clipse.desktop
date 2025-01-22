@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=clipse
+Comment=Clipse event listener autostart.
+Exec=/home/hoolies/go/bin/clipse --listen %f
+Terminal=false
+Type=Application
