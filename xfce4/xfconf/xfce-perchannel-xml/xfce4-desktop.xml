@@ -13,7 +13,9 @@
         <property name="workspace1" type="empty">
           <property name="color-style" type="int" value="0"/>
           <property name="image-style" type="int" value="5"/>
-          <property name="last-image" type="string" value="/usr/share/backgrounds/xfce/xfce-flower.svg"/>
+          <property name="last-image" type="string" value="/home/hoolies/Pictures/Backgrounds/Space-Void.jpg"/>
+          <property name="backdrop-cycle-enable" type="bool" value="true"/>
+          <property name="backdrop-cycle-timer" type="uint" value="5"/>
         </property>
         <property name="workspace2" type="empty">
           <property name="color-style" type="int" value="0"/>
@@ -62,5 +64,8 @@
   <property name="last" type="empty">
     <property name="window-width" type="int" value="790"/>
     <property name="window-height" type="int" value="547"/>
+  </property>
+  <property name="windowlist-menu" type="empty">
+    <property name="show-submenus" type="bool" value="false"/>
   </property>
 </channel>

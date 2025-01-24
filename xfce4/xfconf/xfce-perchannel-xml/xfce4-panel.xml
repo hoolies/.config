@@ -43,12 +43,12 @@
   </property>
   <property name="plugins" type="empty">
     <property name="plugin-2" type="string" value="tasklist">
-      <property name="grouping" type="uint" value="1"/>
+      <property name="grouping" type="bool" value="false"/>
       <property name="show-labels" type="bool" value="false"/>
       <property name="sort-order" type="uint" value="1"/>
       <property name="middle-click" type="uint" value="1"/>
       <property name="include-all-monitors" type="bool" value="true"/>
-      <property name="include-all-workspaces" type="bool" value="true"/>
+      <property name="include-all-workspaces" type="bool" value="false"/>
       <property name="flat-buttons" type="bool" value="true"/>
       <property name="show-handle" type="bool" value="false"/>
       <property name="show-tooltips" type="bool" value="true"/>
@@ -63,6 +63,7 @@
     <property name="plugin-6" type="string" value="systray">
       <property name="square-icons" type="bool" value="true"/>
       <property name="known-legacy-items" type="array">
+        <value type="string" value="configuring wi-fi network connection “caledonuts”…"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (71%)"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (87%)"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (79%)"/>

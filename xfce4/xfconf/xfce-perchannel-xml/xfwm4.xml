@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.1" encoding="UTF-8"?>
 
 <channel name="xfwm4" version="1.0">
   <property name="general" type="empty">
@@ -9,7 +9,7 @@
     <property name="button_layout" type="string" value="S|C"/>
     <property name="button_offset" type="int" value="0"/>
     <property name="button_spacing" type="int" value="0"/>
-    <property name="click_to_focus" type="bool" value="false"/>
+    <property name="click_to_focus" type="bool" value="true"/>
     <property name="cycle_apps_only" type="bool" value="false"/>
     <property name="cycle_draw_frame" type="bool" value="true"/>
     <property name="cycle_raise" type="bool" value="true"/>
@@ -53,7 +53,7 @@
     <property name="show_app_icon" type="bool" value="false"/>
     <property name="show_dock_shadow" type="bool" value="true"/>
     <property name="show_frame_shadow" type="bool" value="true"/>
-    <property name="show_popup_shadow" type="bool" value="false"/>
+    <property name="show_popup_shadow" type="bool" value="true"/>
     <property name="snap_resist" type="bool" value="false"/>
     <property name="snap_to_border" type="bool" value="true"/>
     <property name="snap_to_windows" type="bool" value="true"/>
