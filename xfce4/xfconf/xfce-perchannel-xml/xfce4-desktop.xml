@@ -7,20 +7,20 @@
         <property name="workspace0" type="empty">
           <property name="color-style" type="int" value="0"/>
           <property name="image-style" type="int" value="3"/>
-          <property name="last-image" type="string" value="/home/hoolies/Downloads/void.png"/>
+          <property name="last-image" type="string" value="/home/hoolies/.config/Backgrounds/Kernel.png"/>
           <property name="backdrop-cycle-enable" type="bool" value="true"/>
         </property>
         <property name="workspace1" type="empty">
           <property name="color-style" type="int" value="0"/>
           <property name="image-style" type="int" value="5"/>
-          <property name="last-image" type="string" value="/home/hoolies/Pictures/Backgrounds/Space-Void.jpg"/>
-          <property name="backdrop-cycle-enable" type="bool" value="true"/>
+          <property name="last-image" type="string" value="/home/hoolies/.config/Backgrounds/Forrest-Void-Flipped.png"/>
+          <property name="backdrop-cycle-enable" type="bool" value="false"/>
           <property name="backdrop-cycle-timer" type="uint" value="5"/>
         </property>
         <property name="workspace2" type="empty">
           <property name="color-style" type="int" value="0"/>
           <property name="image-style" type="int" value="5"/>
-          <property name="last-image" type="string" value="/usr/share/backgrounds/xfce/xfce-shapes.svg"/>
+          <property name="last-image" type="string" value="/home/hoolies/.config/Backgrounds/Void-Linux.png"/>
         </property>
         <property name="workspace3" type="empty">
           <property name="color-style" type="int" value="0"/>
@@ -49,7 +49,7 @@
         <property name="image-style" type="int" value="5"/>
       </property>
     </property>
-    <property name="single-workspace-mode" type="bool" value="true"/>
+    <property name="single-workspace-mode" type="bool" value="false"/>
     <property name="single-workspace-number" type="int" value="1"/>
   </property>
   <property name="desktop-icons" type="empty">
