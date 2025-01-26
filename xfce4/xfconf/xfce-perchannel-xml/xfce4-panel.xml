@@ -28,7 +28,7 @@
         <value type="int" value="14"/>
       </property>
       <property name="mode" type="uint" value="0"/>
-      <property name="autohide-behavior" type="uint" value="0"/>
+      <property name="autohide-behavior" type="uint" value="1"/>
       <property name="background-style" type="uint" value="0"/>
       <property name="background-image" type="string" value="file:///home/hoolies/Downloads/void.png"/>
       <property name="background-rgba" type="array">
