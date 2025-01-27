@@ -60,6 +60,7 @@
     </property>
     <property name="plugin-5" type="string" value="separator">
       <property name="style" type="uint" value="0"/>
+      <property name="expand" type="bool" value="true"/>
     </property>
     <property name="plugin-6" type="string" value="systray">
       <property name="square-icons" type="bool" value="true"/>
@@ -146,14 +147,14 @@
         <property name="altitude" type="int" value="0"/>
         <property name="apparent-temperature" type="int" value="1"/>
       </property>
-      <property name="round" type="bool" value="true"/>
+      <property name="round" type="bool" value="false"/>
       <property name="single-row" type="bool" value="true"/>
       <property name="tooltip-style" type="int" value="1"/>
       <property name="forecast" type="empty">
         <property name="layout" type="int" value="1"/>
         <property name="days" type="int" value="5"/>
       </property>
-      <property name="theme-dir" type="string" value="/usr/share/xfce4/weather/icons/liquid-dark"/>
+      <property name="theme-dir" type="string" value="/usr/share/xfce4/weather/icons/simplistic"/>
       <property name="scrollbox" type="empty">
         <property name="show" type="bool" value="true"/>
         <property name="animate" type="bool" value="true"/>
