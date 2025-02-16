@@ -66,7 +66,7 @@
       <property name="enable-keyboard-shortcuts" type="bool" value="true"/>
       <property name="show-notifications" type="bool" value="true"/>
       <property name="mpris-players" type="string" value="firefox.instance1129;firefox.instance1131;firefox.instance1132;firefox.instance11964;firefox.instance18620;firefox.instance_1_53"/>
-      <property name="known-players" type="string" value="firefox;Firefox Web Browser"/>
+      <property name="known-players" type="string" value="Firefox;firefox;Firefox Web Browser"/>
     </property>
     <property name="plugin-9" type="string" value="power-manager-plugin"/>
     <property name="plugin-10" type="string" value="notification-plugin"/>

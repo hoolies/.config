@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=conky
-Comment=Conky loader
-Exec=/usr/bin/conky --config /home/hoolies/.config/conky/conky.config
-Terminal=false
-Type=Application
