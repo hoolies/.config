@@ -1,5 +1,5 @@
 [font]
-size = 11.0
+size = 14.0
 
 [font.italic]
 family = "Hack Nerd Font Mono"
@@ -29,7 +29,7 @@ mouse = { enabled = true }
 
 [window]
 decorations = "None"
-opacity = 0.67
+opacity = 1
 startup_mode = "Fullscreen"
 
 [bell]
