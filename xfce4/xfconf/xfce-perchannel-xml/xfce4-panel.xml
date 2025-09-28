@@ -46,6 +46,8 @@
     <property name="plugin-6" type="string" value="systray">
       <property name="square-icons" type="bool" value="true"/>
       <property name="known-legacy-items" type="array">
+        <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (67%)"/>
+        <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (72%)"/>
         <value type="string" value="configuring wi-fi network connection “caledonuts”…"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (71%)"/>
         <value type="string" value="wi-fi network connection “caledonuts” active: caledonuts (87%)"/>
@@ -60,6 +62,10 @@
         <value type="string" value="wi-fi network connection “undernet” active: undernet (54%)"/>
         <value type="string" value="wi-fi network connection “undernet” active: undernet (52%)"/>
         <value type="string" value="networkmanager applet"/>
+      </property>
+      <property name="known-items" type="array">
+        <value type="string" value="steam"/>
+        <value type="string" value="chrome_status_icon_1"/>
       </property>
     </property>
     <property name="plugin-8" type="string" value="pulseaudio">
@@ -111,7 +117,7 @@
       </property>
       <property name="msl" type="int" value="192"/>
       <property name="timezone" type="string" value="America/Toronto"/>
-      <property name="offset" type="string" value="-05:00"/>
+      <property name="offset" type="string" value="-04:00"/>
       <property name="cache-max-age" type="int" value="172800"/>
       <property name="power-saving" type="bool" value="true"/>
       <property name="units" type="empty">

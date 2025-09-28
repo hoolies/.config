@@ -1,0 +1,10 @@
+[GuiConfig]
+captureMode=0
+
+[ImageSave]
+lastImageSaveAsLocation=file:///home/hoolies/Pictures/Screenshots/April.png
+lastImageSaveLocation=file:///home/hoolies/Pictures/Screenshots/April.png
+translatedScreenshotsFolder=Screenshots
+
+[VideoSave]
+translatedScreencastsFolder=Screencasts

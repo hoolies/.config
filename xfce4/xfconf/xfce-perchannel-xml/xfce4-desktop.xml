@@ -48,8 +48,18 @@
         <property name="image-show" type="bool" value="true"/>
         <property name="image-style" type="int" value="5"/>
       </property>
+      <property name="monitoreDP-1" type="empty">
+        <property name="workspace1" type="empty">
+          <property name="last-image" type="string" value="/home/hoolies/.config/Backgrounds/Forrest-Void.png"/>
+        </property>
+      </property>
+      <property name="monitorDP-1-3" type="empty">
+        <property name="workspace1" type="empty">
+          <property name="last-image" type="string" value="/home/hoolies/.config/Backgrounds/Pattern.png"/>
+        </property>
+      </property>
     </property>
-    <property name="single-workspace-mode" type="bool" value="false"/>
+    <property name="single-workspace-mode" type="bool" value="true"/>
     <property name="single-workspace-number" type="int" value="1"/>
   </property>
   <property name="desktop-icons" type="empty">
@@ -58,6 +68,9 @@
       <property name="show-trash" type="bool" value="false"/>
       <property name="show-unknown-removable" type="bool" value="true"/>
       <property name="show-filesystem" type="bool" value="false"/>
+      <property name="migrated-4.19" type="array">
+        <value type="string" value="15c7194160c2b929809fe90a54f33f15b30cef8c"/>
+      </property>
     </property>
   </property>
   <property name="last-settings-migration-version" type="uint" value="1"/>

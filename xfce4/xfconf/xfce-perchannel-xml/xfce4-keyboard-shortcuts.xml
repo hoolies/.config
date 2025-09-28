@@ -43,6 +43,7 @@
       <property name="&lt;Shift&gt;&lt;Super&gt;b" type="string" value="/usr/bin/firefox-wayland"/>
       <property name="&lt;Super&gt;space" type="string" value="/usr/bin/dmenu_run"/>
       <property name="&lt;Primary&gt;&lt;Shift&gt;parenright" type="string" value="/home/hoolies/.config/alacritty/toggle_transparancy.sh"/>
+      <property name="Print" type="string" value="/usr/bin/spectacle"/>
     </property>
   </property>
   <property name="xfwm4" type="empty">
