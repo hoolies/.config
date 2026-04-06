@@ -8,6 +8,13 @@ cursorline = true
 completion-trigger-len = 1
 cursorcolumn = true
 continue-comments = false
+bufferline = "multiple"
+
+[editor.search]
+smart-case = true
+
+[editor.indent-guides]
+render = true
 
 [editor.lsp]
 display-messages = true
@@ -41,3 +48,7 @@ H = ":buffer-previous"
 L = ":buffer-next"
 # A-w = ":buffer-close"
 "C-/" = "toggle_comments"
+
+[keys.select]
+H = ":buffer-previous"
+L = ":buffer-next"
