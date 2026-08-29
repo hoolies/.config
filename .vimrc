@@ -289,8 +289,63 @@ function! HooliesStatusLine() abort
   return '%<%f %h%w%m%r%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
 endfunction
 
+function! HooliesClipboardTool() abort
+  " Wayland + X11 both present: prefer wl-copy so yanks reach clipse / the compositor.
+  if exists('$WAYLAND_DISPLAY') && executable('wl-copy') && executable('wl-paste')
+    let g:clipboard = {
+          \   'name': 'wl-clipboard',
+          \   'copy': {
+          \      '+': ['wl-copy', '--type', 'text/plain'],
+          \      '*': ['wl-copy', '--primary', '--type', 'text/plain'],
+          \    },
+          \   'paste': {
+          \      '+': ['wl-paste', '--no-newline'],
+          \      '*': ['wl-paste', '--no-newline', '--primary'],
+          \    },
+          \   'cache_enabled': 1,
+          \ }
+    return 1
+  endif
+  if executable('xsel')
+    let g:clipboard = {
+          \   'name': 'xsel',
+          \   'copy': {
+          \      '+': ['xsel', '--nodetach', '-i', '-b'],
+          \      '*': ['xsel', '--nodetach', '-i', '-p'],
+          \    },
+          \   'paste': {
+          \      '+': ['xsel', '-o', '-b'],
+          \      '*': ['xsel', '-o', '-p'],
+          \    },
+          \   'cache_enabled': 1,
+          \ }
+    return 1
+  endif
+  return has('clipboard')
+endfunction
+
+function! HooliesYankToSystem() abort
+  if !exists('v:event') || get(v:event, 'operator', '') !=# 'y'
+    return
+  endif
+  let reg = get(v:event, 'regname', '')
+  if reg !=# '' && reg !=# '+' && reg !=# '*'
+    return
+  endif
+  let text = join(get(v:event, 'regcontents', []), "\n")
+  if get(v:event, 'regtype', '') =~# '^V'
+    let text .= "\n"
+  endif
+  if exists('$WAYLAND_DISPLAY') && executable('wl-copy')
+    call system('wl-copy --type text/plain', text)
+  elseif executable('xsel')
+    call system('xsel --nodetach -i -b', text)
+  endif
+endfunction
+
 function! HooliesFlashYank() abort
   if !exists('v:event') || get(v:event, 'operator', '') !=# 'y' | return | endif
+  call HooliesYankToSystem()
   let l1 = getpos("'[")[1]
   let l2 = getpos("']")[1]
   if l1 < 1 || l2 < 1 | return | endif
@@ -439,7 +494,7 @@ set autoread
 set hidden
 set updatetime=250
 
-if has('clipboard')
+if HooliesClipboardTool()
   set clipboard=unnamedplus
 endif
 
@@ -572,6 +627,9 @@ xnoremap <leader>/ y:%s/\V<C-r>=escape(@",'/\')<CR>//g<Left><Left>
 nnoremap x "_x
 xnoremap x "_x
 nnoremap dd "_dd
+
+" Visual Y yanks the selection (not whole lines). "+Y then writes to the clipboard.
+xnoremap Y "+y
 
 xnoremap <silent> < <gv
 xnoremap <silent> > >gv

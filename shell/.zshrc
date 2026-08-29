@@ -36,21 +36,33 @@ export FZF_ALT_C_OPTS="
 # Terminal color
 export TERM=xterm-256color
 
-# Terminal Prompt
+# Terminal Prompt — first line is cwd with a trailing slash (~/src/)
+setopt PROMPT_SUBST
+_hoolies_prompt_cwd=/
+_hoolies_set_prompt_cwd() {
+    local p
+    p="$(print -P '%~')"
+    if [[ "$p" == / ]]; then
+        _hoolies_prompt_cwd=/
+    else
+        _hoolies_prompt_cwd="${p%/}/"
+    fi
+}
+
 export PS1="
- %F{cyan}%~%f
+ %F{cyan}\${_hoolies_prompt_cwd}%f
  %F{white}%?  "
 
 PS1=$'\n\n\n\n\n\e[6A'"$PS1"
 
 export RPROMPT=
 set-title() {
-    echo -e "\e]0;$*\007"
+    printf '\033]0;%s\007' "$*"
 }
 
 # Patch and Editor
 export PATH=$PATH:/usr/local/go/bin
-
+export PATH="${HOME}/depot_tools:$PATH"
 export EDITOR=nvim
 
 # Functions
@@ -80,75 +92,19 @@ function y() {
 	rm -f -- "$tmp"
 }
 
-# Overwrite zsh git default autocomplete
-_git_fzf_complete() {
-  local buffer_words=("${(z)LBUFFER}")
-  local subcommand="${buffer_words[2]}"
-
-  # Only proceed if the command starts with `git`
-  [[ ${buffer_words[1]} != git ]] && zle expand-or-complete && return
-
-  # If no subcommand is typed yet, show list of subcommands
-  if [[ -z "$subcommand" ]]; then
-    local selected=$(git help -a 2>/dev/null | \
-      grep -E "^ +[a-zA-Z]" | awk '{print $1}' | sort -u | \
-      fzf --preview 'git help {} 2>/dev/null | less -R -X -K' \
-          --preview-window=right:70% --border --bind 'ctrl-h:preview-up,ctrl-l:preview-down')
-
-    if [[ -n "$selected" ]]; then
-      LBUFFER+=" $selected"
-      zle redisplay
-    fi
-    return
-  fi
-  # Subcommand exists, use `man git-subcommand` to extract options
-  local man_page="git-$subcommand"
-  local options_start="$(($(man $man_page | col -bx | grep -n 'OPTIONS' | cut -d: -f1) + 1))"
-  local options_end="$(man $man_page | col -bx | grep -n 'EXAMPLES' | cut -d: -f1)"
-
-  local selected=$(man "$man_page" 2>/dev/null | col -bx | \
-    sed -n "$options_start,$((${options_end} - 1))p;${options_end}q" | \
-    grep -E '^\s{7}(-{1,2})' | \
-    sed -E 's/^\s*//' | sort -u | fzf \
-      --preview "man $man_page | col -bx | \
-        sed -n "$options_start,$((${options_end} - 1))p;${options_end}q" | \
-        rg --multiline '^\s*$(echo {})'"
-        --preview-window=right:70% --border --bind 'ctrl-h:preview-up,ctrl-l:preview-down')
-
-    # fzf --preview "man $man_page | col -bx | \
-    # sed -n $options_start,$((${options_end} - 1))p;${options_end}q | \
-    # less -R" \
-    #     --preview-window=right:70% --border --bind 'ctrl-h:preview-up,ctrl-l:preview-down')
-
-  if [[ -n "$selected" ]]; then
-    LBUFFER+=" $selected"
-    zle redisplay
-  fi
+# Empty line after command output; refresh the path on the first prompt line.
+precmd() {
+    print ""
+    _hoolies_set_prompt_cwd
 }
-zle -N _git_fzf_complete
-
-_git_tab_dispatcher() {
-  if [[ "$LBUFFER" == git* ]]; then
-    _git_fzf_complete
-  else
-    zle expand-or-complete
-  fi
-}
-zle -N _git_tab_dispatcher
-bindkey '^I' _git_tab_dispatcher
-
-
-# Add an empty line after the output
-precmd() { print "" }
 
 # Create Aliases for common tasks
-alias ...='cd ../../..'
-alias ..='cd ../..'
 alias grep='grep --color'
 alias l.='ls -d .* --color --group-directories-first'
 alias ll='ls --color -lAthr --group-directories-first'
 alias ls='ls --color -A --group-directories-first'
 alias mac='tail -n +44 /usr/share/wireshark/manuf | fzf'
+alias path='echo $PATH | tr ":" "\n" | xargs -I {} sh -c '\''if [ -d "{}" ]; then printf "\033[32m%s\033[0m\n" "{}"; else printf "\033[31m%s\033[0m\n" "{}"; fi'\'''
 
 # Emacs support
 bindkey -e
@@ -197,6 +153,11 @@ if [ ! -d "$HOME/.zsh/fzf-dir-navigator" ]; then
 fi
 
 
+# check if fzf dir navigator exists exists
+if [ ! -d "$HOME/.zsh/zsh-rtfm" ]; then
+  echo "Installing fzf RTFM."
+  git clone https://github.com/hoolies/RTFM.git $HOME/.zsh/zsh-rtfm
+fi
 
 # Tmux setting for remote servers
 # if [ -z "$TMUX" ]; then
@@ -210,6 +171,9 @@ source $HOME/.zsh/fzf-dir-navigator/fzf-dir-navigator.zsh
 source $HOME/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $HOME/.zsh/zsh-history-substring-search/zsh-history-substring-search.zsh
 source $HOME/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+source $HOME/.zsh/zsh-rtfm/rtfm.plugin.zsh
 source /usr/share/fzf/completion.zsh
 source /usr/share/fzf/key-bindings.zsh
 source <(fzf --zsh)
+# fzf --zsh rebinds Tab to fzf-completion; take it back for RTFM.
+fzf_rtfm_rebind_tab
