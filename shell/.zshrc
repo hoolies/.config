@@ -153,7 +153,7 @@ unsetopt AUTO_CD
 _hoolies_source() {
     local f
     for f in "$@"; do
-        [[ -f "$f" ]] && source -- "$f"
+        [[ -f "$f" ]] && source "$f"
     done
 }
 
@@ -165,7 +165,8 @@ _hoolies_source \
     "${HOME}/.zsh/zsh-rtfm/rtfm.plugin.zsh"
 
 if command -v fzf >/dev/null 2>&1; then
-    source <(fzf --zsh)
+    # fzf's "emulate zsh" tries to unset PRIVILEGED and errors in a root shell.
+    source <(fzf --zsh | sed -e "s/'builtin' 'emulate' 'zsh' \&\& //")
 fi
 
 # fzf --zsh rebinds Tab to fzf-completion; take it back for RTFM.
@@ -178,8 +179,8 @@ if (( $+widgets[autosuggest-accept] )); then
 fi
 
 if (( $+widgets[history-substring-search-up] )); then
-    bindkey "${terminfo[kcuu1]:-$'^[[A'}" history-substring-search-up
-    bindkey "${terminfo[kcud1]:-$'^[[B'}" history-substring-search-down
+    bindkey "${terminfo[kcuu1]:-$'\e[A'}" history-substring-search-up
+    bindkey "${terminfo[kcud1]:-$'\e[B'}" history-substring-search-down
     bindkey '^P' history-substring-search-up
     bindkey '^N' history-substring-search-down
 fi
