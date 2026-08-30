@@ -36,20 +36,7 @@ rehash
 export EDITOR=nvim
 export VISUAL="$EDITOR"
 
-# First prompt line is cwd with a trailing slash (~/src/)
-setopt PROMPT_SUBST
-_hoolies_prompt_cwd=/
 _hoolies_prompt_pad=5
-
-_hoolies_set_prompt_cwd() {
-    local p
-    p="$(print -P '%~')"
-    if [[ "$p" == / ]]; then
-        _hoolies_prompt_cwd=/
-    else
-        _hoolies_prompt_cwd="${p%/}/"
-    fi
-}
 
 # Blank line after command output
 _hoolies_prompt_blank() {
@@ -67,7 +54,7 @@ _hoolies_prompt_spacer() {
 }
 
 export PS1="
- %F{cyan}\${_hoolies_prompt_cwd}%f
+ %F{cyan}%~%f
  %F{white}%?  "
 
 export RPROMPT=
@@ -78,7 +65,6 @@ set-title() {
 
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _hoolies_prompt_blank
-add-zsh-hook precmd _hoolies_set_prompt_cwd
 add-zsh-hook precmd _hoolies_prompt_spacer
 
 _fzf_compgen_path() {
