@@ -111,6 +111,7 @@ path() {
     done
 }
 
+alias dmesg='dmesg --color=always | less -R'
 alias grep='grep --color'
 alias l.='ls -d .* --color --group-directories-first'
 alias ll='ls --color -lAthr --group-directories-first'
@@ -149,6 +150,12 @@ _hoolies_source \
     "${HOME}/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh" \
     "${HOME}/.zsh/zsh-history-substring-search/zsh-history-substring-search.zsh" \
     "${HOME}/.zsh/zsh-rtfm/rtfm.plugin.zsh"
+
+# Prefer the workspace RTFM checkout when present (keeps Tab fixes in sync).
+if [[ -f /workspace/git/RTFM/rtfm.plugin.zsh ]]; then
+    builtin source /workspace/git/RTFM/rtfm.plugin.zsh
+    (( $+functions[fzf_rtfm_rebind_tab] )) && fzf_rtfm_rebind_tab
+fi
 
 if command -v fzf >/dev/null 2>&1; then
     # fzf's "emulate zsh" tries to unset PRIVILEGED and errors in a root shell.
