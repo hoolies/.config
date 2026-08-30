@@ -23,8 +23,12 @@ bindings = [
 ]
 
 [[hints.enabled]]
-regex = "[^ ]+\\.rs:\\d+:\\d+"
-command = { program = "code", args = [ "--goto" ] }
+regex = "[^ ]+:\\d+:\\d+"
+command = { program = "sh", args = [
+    "-c",
+    "m=$1; f=${m%%:*}; r=${m#*:}; l=${r%%:*}; c=${r##*:}; exec nvim -- \"$f\" \"+call cursor($l, $c)\"",
+    "open-at",
+] }
 mouse = { enabled = true }
 
 [window]
@@ -33,12 +37,9 @@ opacity = 0.67
 startup_mode = "Fullscreen"
 
 [bell]
-animation ="Linear"
+animation = "Linear"
 duration = 1
 color = "#FFFFFF"
-
-[env]
-TERM = "xterm-256color"
 
 [selection]
 save_to_clipboard = true

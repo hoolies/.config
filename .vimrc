@@ -1,4 +1,5 @@
 " Vim configuration — plugin-free port of https://github.com/hoolies/nvim
+" For Vim (available everywhere). Neovim is a separate, unshared config.
 " Single-file: all logic and colors live here (no autoload/ or colors/ files).
 
 scriptencoding utf-8
@@ -483,7 +484,7 @@ set scrolloff=999
 set showmatch
 set splitright
 set splitbelow
-set autochdir
+set noautochdir
 set iskeyword=@,48-57,192-255
 set modifiable
 if has('gui_running')

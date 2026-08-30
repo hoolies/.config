@@ -12,4 +12,5 @@ mimeapps.list
 ristretto/
 sway/
 uv/
+# Neovim is a local setup (LazyVim) and is not part of these shared dotfiles.
 nvim/
