@@ -1,12 +1,17 @@
 # Tab completion with colors
 zstyle ':completion:*' menu select
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+zstyle ':completion:*' use-cache on
+zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcache"
+command mkdir -p -- "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcache"
 if command -v dircolors >/dev/null 2>&1; then
     eval "$(dircolors)"
     zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 fi
 
 # Color for manpages in less
+export PAGER=less
+export LESS=-R
 export LESS_TERMCAP_mb=$'\E[01;31m'
 export LESS_TERMCAP_md=$'\E[01;31m'
 export LESS_TERMCAP_me=$'\E[0m'
@@ -25,6 +30,11 @@ export FZF_CTRL_T_OPTS="
 
 export FZF_ALT_C_OPTS="
   --preview 'tree -C {}'"
+
+export FZF_CTRL_R_OPTS="
+  --preview 'printf %s\\n {4..}'
+  --preview-window down:3:wrap
+  --bind 'ctrl-/:toggle-preview'"
 
 # PATH: user tools first; skip missing dirs; drop duplicates
 typeset -U path
@@ -123,7 +133,9 @@ showpath() {
 }
 
 alias dmesg='dmesg --color=always | less -R'
+alias diff='diff --color=auto'
 alias grep='grep --color=auto'
+alias ip='ip --color=auto'
 alias l.='ls -d .* --color=auto --group-directories-first'
 alias ll='ls --color=auto -lAthr --group-directories-first'
 alias ls='ls --color=auto -A --group-directories-first'
@@ -133,8 +145,12 @@ bindkey "${terminfo[khome]:-$'\e[H'}" beginning-of-line
 bindkey "${terminfo[kend]:-$'\e[F'}" end-of-line
 bindkey "${terminfo[kdch1]:-$'\e[3~'}" delete-char
 
+# Ctrl-W / Alt-B / Alt-F stop at slashes instead of eating a whole path.
+WORDCHARS=${WORDCHARS//\/}
+
 setopt BEEP EXTENDED_GLOB NOMATCH INTERACTIVE_COMMENTS
 unsetopt AUTO_CD
+REPORTTIME=5
 
 # History
 HISTFILE=~/.histfile
@@ -250,6 +266,9 @@ _hoolies_compinit() {
 
 _hoolies_ensure_zsh_plugins
 
+# Do not wrap widgets at source time; we rebind after later zle -N (fzf, magic).
+ZSH_AUTOSUGGEST_MANUAL_REBIND=1
+
 _hoolies_source \
     "${HOME}/.local/bin/env" \
     "${HOME}/.zsh/fzf-dir-navigator/fzf-dir-navigator.zsh" \
@@ -262,6 +281,32 @@ _hoolies_compinit
 if command -v fzf >/dev/null 2>&1; then
     # fzf's "emulate zsh" tries to unset PRIVILEGED and errors in a root shell.
     source <(fzf --zsh | sed -e "s/'builtin' 'emulate' 'zsh' \&\& //")
+fi
+
+# fzf's Ctrl-R list has no dates; relist with EXTENDED_HISTORY timestamps
+# and insert only the command (not the histno/date prefix).
+if (( $+widgets[fzf-history-widget] )); then
+    fzf-history-widget() {
+        emulate -L zsh
+        setopt EXTENDED_GLOB
+        local selected
+        selected=$(
+            fc -t '%F %T' -rl 1 |
+                awk '{
+                    cmd = $0
+                    sub(/^[[:space:]]*[0-9]+\*?[[:space:]]+[0-9-]+[[:space:]]+[0-9:]+[[:space:]]+/, "", cmd)
+                    if (!seen[cmd]++) print
+                }' |
+                FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS-} ${FZF_CTRL_R_OPTS-}" fzf --scheme=history --no-sort --query="$LBUFFER"
+        ) || return
+        if [[ $selected == (#b)[[:space:]]#[0-9]##[[:space:]]##[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]##[0-9][0-9]:[0-9][0-9]:[0-9][0-9][[:space:]]##(*) ]]; then
+            LBUFFER=$match[1]
+        else
+            LBUFFER=${selected##[[:space:]]#[0-9]##[[:space:]]##}
+        fi
+        zle reset-prompt
+    }
+    zle -N fzf-history-widget
 fi
 
 # fzf --zsh rebinds Tab to fzf-completion; take it back for RTFM.
@@ -280,5 +325,16 @@ if (( $+widgets[history-substring-search-up] )); then
     bindkey '^N' history-substring-search-down
 fi
 
+# Quote URL metacharacters as you type/paste; keep multi-line paste off the
+# command line until Enter. Highlighting must wrap these, so load it after.
+autoload -Uz url-quote-magic bracketed-paste-magic
+zle -N self-insert url-quote-magic
+zle -N bracketed-paste bracketed-paste-magic
+
+if (( $+functions[_zsh_autosuggest_bind_widgets] )); then
+    _zsh_autosuggest_bind_widgets
+fi
+
 # Syntax highlighting must be last so it wraps widgets from fzf / RTFM.
+ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
 _hoolies_source "${HOME}/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
