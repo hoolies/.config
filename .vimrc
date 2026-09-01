@@ -543,8 +543,12 @@ function! HooliesVimEnterNoArgs() abort
   if argc() == 0
     call HooliesDashboard()
   elseif argc() == 1 && isdirectory(argv(0))
-    exe 'cd' fnameescape(argv(0))
-    call HooliesDashboard()
+    let dir = fnamemodify(expand(argv(0)), ':p')
+    exe 'cd' fnameescape(dir)
+    " Replace Vim's full-window directory buffer with an empty edit + left explorer.
+    enew
+    execute 'Lexplore' fnameescape(dir)
+    silent! bwipeout #
   endif
 endfunction
 
