@@ -44,7 +44,7 @@ done
 unset _hoolies_dir
 rehash
 
-export EDITOR=nvim
+export EDITOR=vim
 export VISUAL="$EDITOR"
 
 _hoolies_prompt_pad=5
