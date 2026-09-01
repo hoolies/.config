@@ -430,6 +430,7 @@ endfunction
 
 function! HooliesTabline() abort
   let s = ''
+  let click = has('tablineat')
   for b in range(1, bufnr('$'))
     if !buflisted(b) | continue | endif
     let name = fnamemodify(bufname(b), ':t')
@@ -438,8 +439,13 @@ function! HooliesTabline() abort
       let name .= '+'
     endif
     let s .= (b == bufnr('%') ? '%#TabLineSel#' : '%#TabLine#')
-    let s .= '%' . b . '@HooliesTablineClick@ ' . name . ' %X'
+    if click
+      let s .= '%' . b . '@HooliesTablineClick@ ' . name . ' %X'
+    else
+      let s .= ' ' . name . ' '
+    endif
   endfor
+  let s .= '%#TabLineFill#'
   return s
 endfunction
 
@@ -462,6 +468,16 @@ function! HooliesClipboardTool() abort
     return 1
   endif
   return has('clipboard')
+endfunction
+
+function! HooliesAlacrittyOpacity(opacity) abort
+  if !exists('$ALACRITTY_SOCKET') || !executable('alacritty')
+    return
+  endif
+  let win = exists('$ALACRITTY_WINDOW_ID') ? $ALACRITTY_WINDOW_ID : '-1'
+  call system('alacritty msg -s ' . shellescape($ALACRITTY_SOCKET)
+        \ . ' config -w ' . shellescape(win)
+        \ . ' ' . shellescape('window.opacity=' . a:opacity))
 endfunction
 
 function! HooliesYankToSystem() abort
@@ -711,7 +727,7 @@ function! HooliesApplyColors() abort
   let s:cursorline = '#292e42'
   let s:magenta = '#ff007c'
   if has('gui_running') || &termguicolors
-    exe '.i Normal guibg=' . s:bg . ' guifg=' . s:fg
+    exe 'hi Normal guibg=' . s:bg . ' guifg=' . s:fg
     exe 'hi Comment guifg=' . s:comment
     exe 'hi LineNr guifg=' . s:line . ' gui=NONE cterm=NONE term=NONE'
     exe 'hi SignColumn guibg=' . s:bg . ' guifg=' . s:line . ' gui=NONE cterm=NONE'
@@ -725,9 +741,10 @@ function! HooliesApplyColors() abort
     hi Search guibg=#3e68d7 guifg=#c0caf5
     hi StatusLine guibg=#1f2335 guifg=#a9b1d6
     hi StatusLineNC guibg=#1f2335 guifg=#565f89
-    hi TabLine guibg=#1f2335 guifg=#565f89
-    hi TabLineSel guibg=#292e42 guifg=#c0caf5 gui=bold
-    hi TabLineFill guibg=#1f2335
+    exe 'hi TabLine guibg=' . s:bg . ' guifg=' . s:comment
+    exe 'hi TabLineSel guibg=' . s:bg . ' guifg=' . s:fg . ' gui=bold'
+    exe 'hi TabLineFill guibg=' . s:bg . ' guifg=' . s:bg
+    exe 'hi EndOfBuffer guibg=' . s:bg . ' guifg=' . s:bg
     hi Pmenu guibg=#1f2335 guifg=#c0caf5
     hi PmenuSel guibg=#343b58 guifg=#c0caf5
     hi Visual guibg=#343b58
@@ -846,9 +863,10 @@ function! HooliesApplyColors() abort
     hi Search ctermbg=61 ctermfg=252
     hi StatusLine ctermfg=146 ctermbg=234
     hi StatusLineNC ctermfg=60 ctermbg=234
-    hi TabLine ctermfg=60 ctermbg=234
-    hi TabLineSel ctermfg=252 ctermbg=236 cterm=bold
-    hi TabLineFill ctermbg=234
+    hi TabLine ctermfg=60 ctermbg=235
+    hi TabLineSel ctermfg=252 ctermbg=235 cterm=bold
+    hi TabLineFill ctermfg=235 ctermbg=235
+    hi EndOfBuffer ctermfg=235 ctermbg=235
     hi CursorColumn ctermbg=236
     hi DiffAdd ctermbg=24 ctermfg=NONE
     hi DiffChange ctermbg=236 ctermfg=NONE
@@ -1112,6 +1130,8 @@ augroup hoolies_vimrc
   if exists('##TerminalOpen')
     autocmd TerminalOpen * call HooliesTermSetup()
   endif
+  autocmd VimEnter * call HooliesAlacrittyOpacity(1)
+  autocmd VimLeave * call HooliesAlacrittyOpacity(0.67)
   autocmd BufEnter * call HooliesBufEnter()
   autocmd FocusGained * call HooliesGitBranchRefresh(1)
   autocmd FocusGained,BufEnter * if mode() !=# 'c' | checktime | endif
