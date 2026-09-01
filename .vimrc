@@ -148,7 +148,18 @@ function! HooliesPickerSetup() abort
 endfunction
 
 function! HooliesOldfilesPick() abort
-  let files = filter(copy(v:oldfiles), 'filereadable(v:val)')
+  let files = []
+  for path in v:oldfiles
+    let p = expand(path)
+    if p ==# '' || !filereadable(p)
+      continue
+    endif
+    " Skip fake buffer names like [Dashboard] stored relative to cwd.
+    if fnamemodify(p, ':t') =~# '^\[.\+\]$'
+      continue
+    endif
+    call add(files, p)
+  endfor
   if empty(files)
     echohl WarningMsg | echo 'No readable oldfiles' | echohl None
     return
@@ -459,6 +470,22 @@ function! HooliesStatusLine() abort
   return '%<%f %h%w%m%r%{HooliesStatusGit()}%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
 endfunction
 
+function! HooliesSeedViminfo() abort
+  " One-time: copy ~/.viminfo into ~/.vim/viminfo so recent files survive the move.
+  let legacy = expand('~/.viminfo')
+  let current = expand('~/.vim/viminfo')
+  let marker = expand('~/.vim/viminfo.seeded')
+  if filereadable(marker) || !filereadable(legacy)
+    return
+  endif
+  try
+    call mkdir(expand('~/.vim'), 'p', 0700)
+    call writefile(readfile(legacy), current)
+    call writefile(['seeded-from-home-viminfo'], marker)
+  catch
+  endtry
+endfunction
+
 function! HooliesClipboardTool() abort
   " Wayland + X11 both present: prefer wl-copy so yanks reach clipse / the compositor.
   if exists('$WAYLAND_DISPLAY') && executable('wl-copy') && executable('wl-paste')
@@ -514,10 +541,167 @@ endfunction
 
 function! HooliesVimEnterNoArgs() abort
   if argc() == 0
-    call HooliesOldfilesPick()
+    call HooliesDashboard()
   elseif argc() == 1 && isdirectory(argv(0))
     exe 'cd' fnameescape(argv(0))
+    call HooliesDashboard()
   endif
+endfunction
+
+function! HooliesDashboardLogo() abort
+  return [
+        \ '██╗  ██╗ ██████╗  ██████╗ ██╗     ██╗███████╗███████╗',
+        \ '██║  ██║██╔═══██╗██╔═══██╗██║     ██║██╔════╝██╔════╝',
+        \ '███████║██║   ██║██║   ██║██║     ██║█████╗  ███████╗',
+        \ '██╔══██║██║   ██║██║   ██║██║     ██║██╔══╝  ╚════██║',
+        \ '██║  ██║╚██████╔╝╚██████╔╝███████╗██║███████╗███████║',
+        \ '╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝╚═╝╚══════╝╚══════╝',
+        \ ]
+endfunction
+
+function! HooliesDashboardItems() abort
+  return [
+        \ ['f', 'Find file', 'call HooliesDashboardFind()'],
+        \ ['n', 'New file', 'call HooliesDashboardNew()'],
+        \ ['r', 'Recent files', 'call HooliesDashboardRecent()'],
+        \ ['g', 'Project grep', 'call HooliesDashboardGrep()'],
+        \ ['G', 'Git files', 'call HooliesDashboardGit()'],
+        \ ['c', 'Config', 'call HooliesDashboardConfig()'],
+        \ ['e', 'Explorer', 'call HooliesDashboardExplore()'],
+        \ ['q', 'Quit', 'qa'],
+        \ ]
+endfunction
+
+function! HooliesDashboardPadLeft(line, left) abort
+  return repeat(' ', a:left) . a:line
+endfunction
+
+function! HooliesDashboardBlockWidth(lines) abort
+  let w = 0
+  for l in a:lines
+    let w = max([w, strdisplaywidth(l)])
+  endfor
+  return w
+endfunction
+
+function! HooliesDashboardNormalize(lines, width) abort
+  let out = []
+  for l in a:lines
+    call add(out, l . repeat(' ', a:width - strdisplaywidth(l)))
+  endfor
+  return out
+endfunction
+
+function! HooliesDashboardRender() abort
+  let screen = max([&columns, 40])
+  let logo = HooliesDashboardLogo()
+  let logo_w = HooliesDashboardBlockWidth(logo)
+  let logo = HooliesDashboardNormalize(logo, logo_w)
+  let logo_left = max([0, (screen - logo_w) / 2])
+
+  let sub = 'plugin-free Vim'
+  let sub_left = max([0, logo_left + (logo_w - strdisplaywidth(sub)) / 2])
+
+  let labels = []
+  for item in HooliesDashboardItems()
+    call add(labels, printf('[%s]  %s', item[0], item[1]))
+  endfor
+  let item_w = HooliesDashboardBlockWidth(labels)
+  let labels = HooliesDashboardNormalize(labels, item_w)
+  let item_left = max([0, logo_left + (logo_w - item_w) / 2])
+
+  let body = []
+  for l in logo
+    call add(body, HooliesDashboardPadLeft(l, logo_left))
+  endfor
+  call add(body, '')
+  call add(body, HooliesDashboardPadLeft(sub, sub_left))
+  call add(body, '')
+  for l in labels
+    call add(body, HooliesDashboardPadLeft(l, item_left))
+  endfor
+
+  let top = max([0, (&lines - len(body) - 2) / 2])
+  return repeat([''], top) + body
+endfunction
+
+function! HooliesDashboardClose() abort
+  if &filetype ==# 'hoolies_dashboard'
+    bwipeout!
+  endif
+endfunction
+
+function! HooliesDashboardFind() abort
+  call HooliesDashboardClose()
+  call feedkeys(':find ', 'n')
+endfunction
+
+function! HooliesDashboardNew() abort
+  call HooliesDashboardClose()
+  enew
+endfunction
+
+function! HooliesDashboardRecent() abort
+  call HooliesDashboardClose()
+  call HooliesOldfilesPick()
+endfunction
+
+function! HooliesDashboardGrep() abort
+  call HooliesDashboardClose()
+  call HooliesGrepInteractive()
+endfunction
+
+function! HooliesDashboardGit() abort
+  call HooliesDashboardClose()
+  call HooliesGitFiles()
+endfunction
+
+function! HooliesDashboardConfig() abort
+  call HooliesDashboardClose()
+  call HooliesFindConfigFiles()
+endfunction
+
+function! HooliesDashboardExplore() abort
+  call HooliesDashboardClose()
+  call HooliesExploreToggle()
+endfunction
+
+function! HooliesDashboardHighlight() abort
+  syntax match HooliesDashLogo /[█╔╗╚╝║═]/
+  syntax match HooliesDashKey /\[.\]/
+  syntax match HooliesDashSub /plugin-free Vim/
+  hi! link HooliesDashLogo Function
+  hi! link HooliesDashKey Number
+  hi! link HooliesDashSub Comment
+endfunction
+
+function! HooliesDashboardMaps() abort
+  for item in HooliesDashboardItems()
+    execute 'nnoremap <buffer> <silent> ' . item[0] . ' :' . item[2] . '<CR>'
+  endfor
+  nnoremap <buffer> <silent> <Esc> :call HooliesDashboardNew()<CR>
+endfunction
+
+function! HooliesDashboard() abort
+  keepalt enew
+  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
+  setlocal nonumber norelativenumber nolist
+  setlocal nocursorline nocursorcolumn
+  setlocal nowrap colorcolumn=0 signcolumn=no
+  setlocal scrolloff=0 sidescrolloff=0
+  setlocal statusline=\ Hoolies%=
+  setlocal filetype=hoolies_dashboard
+  " Do not :file-rename this buffer — a relative name becomes cwd/[Name] in viminfo.
+  call setline(1, HooliesDashboardRender())
+  setlocal nomodifiable nomodified
+  call HooliesDashboardHighlight()
+  call HooliesDashboardMaps()
+  " Put the cursor on the first menu row (keeps the padded layout stable).
+  let lnum = 1
+  while lnum <= line('$') && getline(lnum) !~# '\['
+    let lnum += 1
+  endwhile
+  call cursor(lnum, 1)
 endfunction
 
 function! HooliesCurrentBufferGrep() abort
@@ -656,6 +840,7 @@ function! HooliesMapsLines() abort
         \ '  C-arrows      resize splits',
         \ '',
         \ 'Other',
+        \ '  (no args)     welcome dashboard',
         \ '  Esc           clear search highlight',
         \ '  Esc Esc       hide terminal (job keeps running)',
         \ '  jj            leave insert mode',
@@ -905,6 +1090,7 @@ set updatetime=250
 set mouse=a
 set title
 if exists('+viminfofile')
+  call HooliesSeedViminfo()
   set viminfofile=~/.vim/viminfo
 endif
 
@@ -1116,6 +1302,7 @@ xnoremap <Space> <Nop>
 augroup hoolies_vimrc
   autocmd!
   " Spell only where prose is expected (keeps .vimrc / code free of spell highlights)
+  autocmd FileType hoolies_dashboard call HooliesDashboardHighlight()
   autocmd FileType markdown,gitcommit,text,typst,rst setlocal spell
   autocmd FileType * call HooliesSetOmnifunc()
   autocmd FileType netrw setlocal nonumber norelativenumber
