@@ -2,6 +2,7 @@
 " For Vim (available everywhere). Neovim is a separate, unshared config.
 " Single-file: all logic and colors live here (no autoload/ or colors/ files).
 
+set nocompatible
 scriptencoding utf-8
 
 " Leader first: must exist before any mapping using <leader> is defined.
@@ -9,6 +10,7 @@ let g:mapleader = "\<Space>"
 let g:maplocalleader = '\'
 
 silent! call mkdir(expand('~/.vim/undodir'), 'p', 0700)
+silent! call mkdir(expand('~/.vim/swap'), 'p', 0700)
 
 " =============================================================================
 " Helper functions (single file; names are Hoolies* because foo#bar only loads from autoload/)
@@ -16,6 +18,8 @@ silent! call mkdir(expand('~/.vim/undodir'), 'p', 0700)
 
 let s:term_winid = -1
 let s:term_bufnr = -1
+let s:git_branch = ''
+let s:git_branch_dir = ''
 
 function! HooliesFloatingTermToggle() abort
   if !has('terminal')
@@ -37,7 +41,40 @@ function! HooliesFloatingTermToggle() abort
     call term_start(&shell, {'curwin': 1, 'norestore': 1})
     let s:term_bufnr = bufnr('%')
   endif
+  call HooliesTermSetup()
   startinsert
+endfunction
+
+function! HooliesTermSetup() abort
+  setlocal nonumber norelativenumber nobuflisted bufhidden=hide noswapfile
+endfunction
+
+function! HooliesTermHide() abort
+  if win_getid() == s:term_winid
+    let s:term_winid = -1
+  endif
+  close
+endfunction
+
+function! HooliesNormalEsc() abort
+  if &buftype ==# 'terminal'
+    call HooliesTermHide()
+    return
+  endif
+  nohlsearch
+endfunction
+
+function! HooliesCloseOtherBuffers() abort
+  let cur = bufnr('%')
+  for b in range(1, bufnr('$'))
+    if !buflisted(b) || b == cur
+      continue
+    endif
+    if getbufvar(b, '&buftype') ==# 'terminal'
+      continue
+    endif
+    execute 'bdelete' b
+  endfor
 endfunction
 
 let s:undo_bufnr = -1
@@ -51,27 +88,63 @@ function! HooliesUndotreeToggle() abort
   endif
   let ut = undotree()
   silent vertical 40new
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap
+  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap nonumber norelativenumber
   let s:undo_bufnr = bufnr('%')
   call setline(1, printf('Undo (seq_cur=%s time_cur=%s)', ut.seq_cur, ut.time_cur))
-  call setline(2, 'Commands: :earlier :later :undo | :help undotree()')
+  call setline(2, 'Enter: undo to seq  |  q: close  |  :earlier :later')
   call setline(3, '')
-  let ln = 4
+  let lines = []
   if has_key(ut, 'entries')
-    for e in ut.entries
-      if type(e) == v:t_dict
-        call setline(ln, printf('  seq=%s time=%s save=%s',
-              \ get(e, 'seq', '?'), get(e, 'time', '?'), get(e, 'save', '?')))
-      else
-        call setline(ln, '  ' . string(e))
-      endif
-      let ln += 1
-    endfor
+    let lines = HooliesUndotreeLines(ut.entries, 1)
   else
-    call setline(ln, string(ut))
+    let lines = [string(ut)]
+  endif
+  if !empty(lines)
+    call setline(4, lines)
   endif
   setlocal nomodifiable
   nnoremap <buffer> <silent> q :close<CR>
+  nnoremap <buffer> <silent> <CR> :call HooliesUndotreeApply()<CR>
+endfunction
+
+function! HooliesUndotreeLines(entries, indent) abort
+  let lines = []
+  for e in a:entries
+    if type(e) != v:t_dict
+      call add(lines, repeat('  ', a:indent) . string(e))
+      continue
+    endif
+    call add(lines, printf('%sseq=%s time=%s save=%s',
+          \ repeat('  ', a:indent),
+          \ get(e, 'seq', '?'), get(e, 'time', '?'), get(e, 'save', '?')))
+    if has_key(e, 'alt') && type(e.alt) == v:t_list
+      let lines += HooliesUndotreeLines(e.alt, a:indent + 1)
+    endif
+  endfor
+  return lines
+endfunction
+
+function! HooliesUndotreeApply() abort
+  let m = matchlist(getline('.'), 'seq=\(\d\+\)')
+  if empty(m)
+    return
+  endif
+  let seq = m[1]
+  close
+  let s:undo_bufnr = -1
+  try
+    execute 'undo' seq
+  catch
+    echohl ErrorMsg
+    echo 'undo failed: seq=' . seq
+    echohl None
+  endtry
+endfunction
+
+function! HooliesPickerSetup() abort
+  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap nonumber norelativenumber
+  nnoremap <buffer> <silent> q :bwipeout!<CR>
+  nnoremap <buffer> <silent> <Esc> :bwipeout!<CR>
 endfunction
 
 function! HooliesOldfilesPick() abort
@@ -81,10 +154,9 @@ function! HooliesOldfilesPick() abort
     return
   endif
   silent botright 12new
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
+  call HooliesPickerSetup()
   call setline(1, files)
   nnoremap <buffer> <silent> <CR> :call HooliesOpenOldfileLine()<CR>
-  nnoremap <buffer> <silent> q :bwipeout!<CR>
 endfunction
 
 function! HooliesOpenOldfileLine() abort
@@ -100,10 +172,9 @@ function! HooliesPickPaths(title, paths) abort
     return
   endif
   silent botright 12new
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
+  call HooliesPickerSetup()
   call setline(1, a:paths)
   nnoremap <buffer> <silent> <CR> :call HooliesOpenOldfileLine()<CR>
-  nnoremap <buffer> <silent> q :bwipeout!<CR>
 endfunction
 
 function! HooliesFindConfigFiles() abort
@@ -129,17 +200,52 @@ function! HooliesGrepInteractive() abort
   call HooliesGrepFill(pat)
 endfunction
 
+function! HooliesGitRoot() abort
+  if !executable('git')
+    return ''
+  endif
+  let dir = expand('%:p:h')
+  if dir ==# '' || !isdirectory(dir)
+    let dir = getcwd()
+  endif
+  let lines = systemlist('git -C ' . shellescape(dir) . ' rev-parse --show-toplevel')
+  if v:shell_error || empty(lines)
+    return ''
+  endif
+  return lines[0]
+endfunction
+
 function! HooliesGrepFill(pat) abort
+  let root = HooliesGitRoot()
   if executable('rg')
-    let out = system('rg --vimgrep -- ' . shellescape(a:pat))
-    if out ==# '' | echo 'No matches' | return | endif
+    let cmd = 'rg --vimgrep -- ' . shellescape(a:pat)
+    if root !=# ''
+      let cmd .= ' ' . shellescape(root)
+    endif
+    let out = system(cmd . ' 2>&1')
+    if v:shell_error >= 2
+      echohl ErrorMsg
+      echo 'rg: ' . get(split(out, "\n"), 0, 'failed')
+      echohl None
+      return
+    endif
+    if v:shell_error || out ==# ''
+      echo 'No matches'
+      return
+    endif
     silent! cexpr out
   else
+    let save_cwd = getcwd()
     try
+      if root !=# ''
+        execute 'lcd' fnameescape(root)
+      endif
       silent exe 'vimgrep /' . escape(a:pat, '/') . '/gj **/*'
     catch /^Vim\%((\a\+)\)\=:E/
       echohl WarningMsg | echo 'vimgrep failed (install ripgrep for best results)' | echohl None
       return
+    finally
+      execute 'lcd' fnameescape(save_cwd)
     endtry
   endif
   copen
@@ -152,6 +258,14 @@ function! HooliesGrepCursorWord() abort
 endfunction
 
 function! HooliesGrepOpenBuffers(pat) abort
+  try
+    call match('', a:pat)
+  catch
+    echohl WarningMsg
+    echo 'Invalid regex'
+    echohl None
+    return
+  endtry
   let qf = []
   for b in range(1, bufnr('$'))
     if !bufloaded(b) || !buflisted(b) | continue | endif
@@ -188,10 +302,9 @@ function! HooliesBufferPicker() abort
     return
   endif
   silent botright 12new
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
+  call HooliesPickerSetup()
   call setline(1, lines)
   nnoremap <buffer> <silent> <CR> :call HooliesOpenBufferPickLine()<CR>
-  nnoremap <buffer> <silent> q :bwipeout!<CR>
 endfunction
 
 function! HooliesOpenBufferPickLine() abort
@@ -207,25 +320,35 @@ function! HooliesOpenBufferPickLine() abort
   endif
 endfunction
 
+function! HooliesFormatBang(cmd) abort
+  silent! execute '%!' . a:cmd
+  if v:shell_error
+    silent! undo
+    echohl ErrorMsg
+    echo 'Formatter failed: ' . a:cmd
+    echohl None
+  endif
+endfunction
+
 function! HooliesFormatBuffer() abort
   let ft = &filetype
   let view = winsaveview()
   if ft ==# 'lua' && executable('stylua')
-    silent! exe '%!stylua -'
+    call HooliesFormatBang('stylua -')
   elseif ft ==# 'python' && executable('ruff')
-    silent! exe '%!ruff format -'
+    call HooliesFormatBang('ruff format -')
   elseif ft ==# 'python' && executable('black')
-    silent! exe '%!black -q -'
+    call HooliesFormatBang('black -q -')
   elseif ft ==# 'go' && executable('goimports')
-    silent! exe '%!goimports'
+    call HooliesFormatBang('goimports')
   elseif ft ==# 'go' && executable('gofmt')
-    silent! exe '%!gofmt'
-  elseif (ft ==# 'html' || ft ==# 'json' || ft ==# 'yaml' || ft ==# 'javascript' || ft ==# 'typescript') && executable('prettier')
-    silent! exe '%!prettier --stdin-filepath ' . shellescape(expand('%:p'))
-  elseif ft ==# 'sh' && executable('shfmt')
-    silent! exe '%!shfmt'
+    call HooliesFormatBang('gofmt')
+  elseif (ft ==# 'html' || ft ==# 'json' || ft ==# 'yaml' || ft ==# 'javascript' || ft ==# 'javascriptreact' || ft ==# 'typescript' || ft ==# 'typescriptreact' || ft ==# 'css') && executable('prettier')
+    call HooliesFormatBang('prettier --stdin-filepath ' . shellescape(expand('%:p')))
+  elseif (ft ==# 'sh' || ft ==# 'bash' || ft ==# 'zsh') && executable('shfmt')
+    call HooliesFormatBang('shfmt -i 4 -ci')
   elseif ft ==# 'elixir' && executable('mix')
-    silent! exe '%!mix format -'
+    call HooliesFormatBang('mix format -')
   else
     silent! normal! gggqG
   endif
@@ -237,13 +360,14 @@ function! HooliesHasFormatter() abort
   if ft ==# 'lua' && executable('stylua') | return 1 | endif
   if ft ==# 'python' && (executable('ruff') || executable('black')) | return 1 | endif
   if ft ==# 'go' && (executable('goimports') || executable('gofmt')) | return 1 | endif
-  if (ft ==# 'html' || ft ==# 'json' || ft ==# 'yaml' || ft ==# 'javascript' || ft ==# 'typescript') && executable('prettier') | return 1 | endif
-  if ft ==# 'sh' && executable('shfmt') | return 1 | endif
+  if (ft ==# 'html' || ft ==# 'json' || ft ==# 'yaml' || ft ==# 'javascript' || ft ==# 'javascriptreact' || ft ==# 'typescript' || ft ==# 'typescriptreact' || ft ==# 'css') && executable('prettier') | return 1 | endif
+  if (ft ==# 'sh' || ft ==# 'bash' || ft ==# 'zsh') && executable('shfmt') | return 1 | endif
   if ft ==# 'elixir' && executable('mix') | return 1 | endif
   return 0
 endfunction
 
 function! HooliesFormatWritePre() abort
+  if !get(g:, 'hoolies_format_on_write', 1) | return | endif
   if &modifiable == 0 || &bin || !HooliesHasFormatter() | return | endif
   call HooliesFormatBuffer()
 endfunction
@@ -255,7 +379,37 @@ function! HooliesBufWritePre() abort
   call HooliesFormatWritePre()
 endfunction
 
+function! HooliesGitBranchRefresh(...) abort
+  let force = a:0 && a:1
+  if &buftype !=# '' || !executable('git')
+    let s:git_branch = ''
+    let s:git_branch_dir = ''
+    return
+  endif
+  let dir = expand('%:p:h')
+  if dir ==# '' || !isdirectory(dir)
+    let s:git_branch = ''
+    let s:git_branch_dir = ''
+    return
+  endif
+  if !force && dir ==# s:git_branch_dir
+    return
+  endif
+  let s:git_branch_dir = dir
+  let s:git_branch = ''
+  let lines = systemlist('git -C ' . shellescape(dir) . ' rev-parse --abbrev-ref HEAD')
+  if v:shell_error || empty(lines)
+    return
+  endif
+  let s:git_branch = lines[0]
+endfunction
+
+function! HooliesStatusGit() abort
+  return s:git_branch ==# '' ? '' : ' ' . s:git_branch
+endfunction
+
 function! HooliesBufEnter() abort
+  call HooliesGitBranchRefresh()
   if &buftype ==# 'terminal'
     startinsert
   elseif &modifiable
@@ -280,46 +434,31 @@ function! HooliesTabline() abort
     if !buflisted(b) | continue | endif
     let name = fnamemodify(bufname(b), ':t')
     if name ==# '' | let name = '[No Name]' | endif
+    if getbufvar(b, '&modified')
+      let name .= '+'
+    endif
     let s .= (b == bufnr('%') ? '%#TabLineSel#' : '%#TabLine#')
-    let s .= '%' . b . 'T ' . name . ' %T'
+    let s .= '%' . b . '@HooliesTablineClick@ ' . name . ' %X'
   endfor
   return s
 endfunction
 
+function! HooliesTablineClick(minwid, nclicks, button, mods) abort
+  if a:minwid > 0 && bufexists(a:minwid)
+    execute 'buffer' a:minwid
+  endif
+endfunction
+
 function! HooliesStatusLine() abort
-  return '%<%f %h%w%m%r%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
+  return '%<%f %h%w%m%r%{HooliesStatusGit()}%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
 endfunction
 
 function! HooliesClipboardTool() abort
   " Wayland + X11 both present: prefer wl-copy so yanks reach clipse / the compositor.
   if exists('$WAYLAND_DISPLAY') && executable('wl-copy') && executable('wl-paste')
-    let g:clipboard = {
-          \   'name': 'wl-clipboard',
-          \   'copy': {
-          \      '+': ['wl-copy', '--type', 'text/plain'],
-          \      '*': ['wl-copy', '--primary', '--type', 'text/plain'],
-          \    },
-          \   'paste': {
-          \      '+': ['wl-paste', '--no-newline'],
-          \      '*': ['wl-paste', '--no-newline', '--primary'],
-          \    },
-          \   'cache_enabled': 1,
-          \ }
     return 1
   endif
   if executable('xsel')
-    let g:clipboard = {
-          \   'name': 'xsel',
-          \   'copy': {
-          \      '+': ['xsel', '--nodetach', '-i', '-b'],
-          \      '*': ['xsel', '--nodetach', '-i', '-p'],
-          \    },
-          \   'paste': {
-          \      '+': ['xsel', '-o', '-b'],
-          \      '*': ['xsel', '-o', '-p'],
-          \    },
-          \   'cache_enabled': 1,
-          \ }
     return 1
   endif
   return has('clipboard')
@@ -391,17 +530,12 @@ function! HooliesGrepOpenBuffersInput() abort
 endfunction
 
 function! HooliesGitFiles() abort
-  if !executable('git')
-    echo 'git not found'
-    return
-  endif
-  let lines = systemlist('git rev-parse --show-toplevel')
-  let root = get(lines, 0, '')
-  if v:shell_error || root ==# ''
+  let root = HooliesGitRoot()
+  if root ==# ''
     echo 'Not a git repo'
     return
   endif
-  let files = systemlist('git ls-files')
+  let files = systemlist('git -C ' . shellescape(root) . ' ls-files')
   if v:shell_error
     echo 'git ls-files failed'
     return
@@ -442,28 +576,25 @@ function! HooliesSetOmnifunc() abort
   if &omnifunc !=# ''
     return
   endif
-  let ft = &filetype
-  if ft ==# 'python'
-    setlocal omnifunc=python3complete#Complete
-  elseif ft ==# 'c' || ft ==# 'cpp'
-    setlocal omnifunc=ccomplete#Complete
-  elseif ft ==# 'css'
-    setlocal omnifunc=csscomplete#CompleteCSS
-  elseif ft ==# 'html' || ft ==# 'htmldjango'
-    setlocal omnifunc=htmlcomplete#CompleteTags
-  elseif ft ==# 'javascript' || ft ==# 'javascriptreact'
-    setlocal omnifunc=javascriptcomplete#CompleteJS
-  elseif ft ==# 'php'
-    setlocal omnifunc=phpcomplete#CompletePHP
-  elseif ft ==# 'ruby'
-    setlocal omnifunc=rubycomplete#Complete
-  elseif ft ==# 'sql'
-    setlocal omnifunc=sqlcomplete#Complete
-  elseif ft ==# 'xml'
-    setlocal omnifunc=xmlcomplete#CompleteTags
-  else
-    setlocal omnifunc=syntaxcomplete#Complete
+  let by_ft = {
+        \ 'python': 'python3complete#Complete',
+        \ 'c': 'ccomplete#Complete',
+        \ 'cpp': 'ccomplete#Complete',
+        \ 'css': 'csscomplete#CompleteCSS',
+        \ 'html': 'htmlcomplete#CompleteTags',
+        \ 'htmldjango': 'htmlcomplete#CompleteTags',
+        \ 'javascript': 'javascriptcomplete#CompleteJS',
+        \ 'javascriptreact': 'javascriptcomplete#CompleteJS',
+        \ 'php': 'phpcomplete#CompletePHP',
+        \ 'ruby': 'rubycomplete#Complete',
+        \ 'sql': 'sqlcomplete#Complete',
+        \ 'xml': 'xmlcomplete#CompleteTags',
+        \ }
+  let name = get(by_ft, &filetype, 'syntaxcomplete#Complete')
+  if !exists('*' . name)
+    let name = 'syntaxcomplete#Complete'
   endif
+  execute 'setlocal omnifunc=' . name
 endfunction
 
 function! HooliesMapsLines() abort
@@ -484,7 +615,8 @@ function! HooliesMapsLines() abort
         \ '  <Space>bD     delete buffer and quit',
         \ '  <Space>bw     wipe buffer',
         \ '  S-h / S-l     previous / next buffer',
-        \ '  Alt-Esc       close other buffers',
+        \ '  click tab     switch to that buffer',
+        \ '  Alt-Esc       close other file buffers',
         \ '',
         \ 'Search',
         \ '  <Space>flf    project grep',
@@ -509,6 +641,7 @@ function! HooliesMapsLines() abort
         \ '',
         \ 'Other',
         \ '  Esc           clear search highlight',
+        \ '  Esc Esc       hide terminal (job keeps running)',
         \ '  jj            leave insert mode',
         \ '  x / dd        delete without yanking',
         \ '  Y (visual)    yank to clipboard',
@@ -530,34 +663,8 @@ function! HooliesMapsBindClose() abort
   nnoremap <buffer> <silent> <Esc> :close<CR>
 endfunction
 
-function! HooliesShowMapsNvim(lines) abort
-  let width = 56
-  let height = min([len(a:lines), &lines - 4])
-  let buf = nvim_create_buf(v:false, v:true)
-  call nvim_buf_set_lines(buf, 0, -1, v:true, a:lines)
-  call nvim_buf_set_option(buf, 'bufhidden', 'wipe')
-  call nvim_buf_set_option(buf, 'modifiable', v:false)
-  let opts = {
-        \ 'relative': 'editor',
-        \ 'width': width,
-        \ 'height': height,
-        \ 'row': max([0, (&lines - height) / 2]),
-        \ 'col': max([0, (&columns - width) / 2]),
-        \ 'style': 'minimal',
-        \ }
-  if has('nvim-0.5')
-    let opts.border = 'rounded'
-  endif
-  call nvim_open_win(buf, v:true, opts)
-  call HooliesMapsBindClose()
-endfunction
-
 function! HooliesShowMaps() abort
   let lines = HooliesMapsLines()
-  if has('nvim') && exists('*nvim_open_win')
-    call HooliesShowMapsNvim(lines)
-    return
-  endif
   if exists('*popup_create')
     try
       call popup_create(lines, {
@@ -604,7 +711,7 @@ function! HooliesApplyColors() abort
   let s:cursorline = '#292e42'
   let s:magenta = '#ff007c'
   if has('gui_running') || &termguicolors
-    exe 'hi Normal guibg=' . s:bg . ' guifg=' . s:fg
+    exe '.i Normal guibg=' . s:bg . ' guifg=' . s:fg
     exe 'hi Comment guifg=' . s:comment
     exe 'hi LineNr guifg=' . s:line . ' gui=NONE cterm=NONE term=NONE'
     exe 'hi SignColumn guibg=' . s:bg . ' guifg=' . s:line . ' gui=NONE cterm=NONE'
@@ -676,6 +783,9 @@ function! HooliesApplyColors() abort
     hi DiffChange guibg=#272d43 guifg=NONE
     hi DiffDelete guibg=#3f2d3d guifg=#f7768e
     hi DiffText guibg=#394b70 guifg=NONE
+    hi StatusLineTerm guibg=#1f2335 guifg=#a9b1d6
+    hi StatusLineTermNC guibg=#1f2335 guifg=#565f89
+    hi QuickFixLine guibg=#343b58 guifg=#c0caf5
   else
     hi Normal ctermfg=252 ctermbg=235
     hi Comment ctermfg=60
@@ -736,6 +846,17 @@ function! HooliesApplyColors() abort
     hi Search ctermbg=61 ctermfg=252
     hi StatusLine ctermfg=146 ctermbg=234
     hi StatusLineNC ctermfg=60 ctermbg=234
+    hi TabLine ctermfg=60 ctermbg=234
+    hi TabLineSel ctermfg=252 ctermbg=236 cterm=bold
+    hi TabLineFill ctermbg=234
+    hi CursorColumn ctermbg=236
+    hi DiffAdd ctermbg=24 ctermfg=NONE
+    hi DiffChange ctermbg=236 ctermfg=NONE
+    hi DiffDelete ctermbg=52 ctermfg=203
+    hi DiffText ctermbg=61 ctermfg=NONE
+    hi StatusLineTerm ctermfg=146 ctermbg=234
+    hi StatusLineTermNC ctermfg=60 ctermbg=234
+    hi QuickFixLine ctermfg=252 ctermbg=237
   endif
   hi! link netrwDir Directory
   hi! link netrwClassify Directory
@@ -753,9 +874,9 @@ set scrolloff=999
 set showmatch
 set splitright
 set splitbelow
+set diffopt+=vertical
 set noautochdir
 set iskeyword=@,48-57,192-255
-set modifiable
 if has('gui_running')
   set guicursor=n:block,i-ci:hor20,v-ve:block
 endif
@@ -763,6 +884,11 @@ endif
 set autoread
 set hidden
 set updatetime=250
+set mouse=a
+set title
+if exists('+viminfofile')
+  set viminfofile=~/.vim/viminfo
+endif
 
 if HooliesClipboardTool()
   set clipboard=unnamedplus
@@ -791,27 +917,37 @@ set smartcase
 set incsearch
 
 set expandtab
-set shiftwidth=2
-set smartindent
-set softtabstop=2
-set tabstop=2
+set shiftwidth=4
+set softtabstop=4
+set tabstop=4
+set backspace=indent,eol,start
+set virtualedit=block
 
 set undodir=~/.vim/undodir
 set undofile
 set undolevels=1000
-set undoreload=1000
+set directory=~/.vim/swap//
 
 set encoding=utf-8
-set fileencoding=utf-8
 set showmode
 set showtabline=2
+set confirm
+set history=1000
+set display+=lastline
+let &fillchars = 'eob: ,vert:│'
+set nrformats-=octal
+let g:hoolies_format_on_write = 1
 " Spell off in code/config: avoids red/pink on names like github, nvim, win_id2win
 set nospell
 if has('termguicolors')
+  if !has('gui_running')
+    let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+    let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+  endif
   set termguicolors
 endif
 set visualbell
-set completeopt=menuone,noinsert,noselect
+set completeopt=menuone,noselect
 set complete=.,w,b,u,t,i
 set infercase
 set shortmess+=c
@@ -833,6 +969,10 @@ endif
 
 set wildmenu
 set wildmode=longest:full,full
+if exists('+wildoptions')
+  set wildoptions+=pum
+  silent! set wildoptions+=fuzzy
+endif
 set path+=**
 
 set tabline=%!HooliesTabline()
@@ -891,7 +1031,7 @@ nnoremap <silent> <leader>bd :bdelete<CR>
 nnoremap <silent> <leader>bD :bdelete<CR>:q!<CR>
 nnoremap <silent> <leader>bw :bwipeout<CR>
 nnoremap <silent> <leader>bb :enew<CR>
-nnoremap <silent> <A-ESC> :%bd<Bar>e#<Bar>bd#<CR>
+nnoremap <silent> <A-ESC> :call HooliesCloseOtherBuffers()<CR>
 
 tnoremap <silent> <C-h> <C-\><C-n><C-w>h
 tnoremap <silent> <C-j> <C-\><C-n><C-w>j
@@ -900,7 +1040,7 @@ tnoremap <silent> <C-l> <C-\><C-n><C-w>l
 
 nnoremap <silent> <leader>u :call HooliesUndotreeToggle()<CR>
 
-nnoremap <silent> <Esc> :nohlsearch<CR>
+nnoremap <silent> <Esc> :call HooliesNormalEsc()<CR>
 
 nnoremap <silent> <Leader><CR> :call HooliesFloatingTermToggle()<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
@@ -947,12 +1087,6 @@ nnoremap <silent> <leader>sn :call HooliesFindConfigFiles()<CR>
 
 nnoremap <silent> <leader>F :call HooliesFormatBuffer()<CR>
 
-inoremap ( ()<Left>
-inoremap [ []<Left>
-inoremap { {}<Left>
-inoremap " ""<Left>
-inoremap ' ''<Left>
-
 " Space alone = nop; define after all <leader> maps so leader is Space + next keys.
 nnoremap <Space> <Nop>
 xnoremap <Space> <Nop>
@@ -976,7 +1110,9 @@ augroup hoolies_vimrc
   autocmd BufWritePre * call HooliesBufWritePre()
   autocmd BufReadPost * if line("'\"") >= 1 && line("'\"") <= line('$') | exe "normal! g`\"" | endif
   if exists('##TerminalOpen')
-    autocmd TerminalOpen * setlocal nonumber norelativenumber
+    autocmd TerminalOpen * call HooliesTermSetup()
   endif
   autocmd BufEnter * call HooliesBufEnter()
+  autocmd FocusGained * call HooliesGitBranchRefresh(1)
+  autocmd FocusGained,BufEnter * if mode() !=# 'c' | checktime | endif
 augroup END
