@@ -410,6 +410,180 @@ function! HooliesGitFiles() abort
   call HooliesPickPaths('Git files', files)
 endfunction
 
+function! HooliesExploreToggle() abort
+  let i = 1
+  while i <= winnr('$')
+    if getbufvar(winbufnr(i), '&filetype') ==# 'netrw'
+      execute i . 'close'
+      return
+    endif
+    let i += 1
+  endwhile
+  let dir = expand('%:p:h')
+  if dir ==# '' || !isdirectory(dir)
+    Lexplore
+  else
+    execute 'Lexplore' fnameescape(dir)
+  endif
+endfunction
+
+function! HooliesTabComplete() abort
+  if pumvisible()
+    return "\<C-n>"
+  endif
+  let col = col('.') - 1
+  if col <= 0 || getline('.')[col - 1] =~# '\s'
+    return "\<Tab>"
+  endif
+  return "\<C-n>"
+endfunction
+
+function! HooliesSetOmnifunc() abort
+  if &omnifunc !=# ''
+    return
+  endif
+  let ft = &filetype
+  if ft ==# 'python'
+    setlocal omnifunc=python3complete#Complete
+  elseif ft ==# 'c' || ft ==# 'cpp'
+    setlocal omnifunc=ccomplete#Complete
+  elseif ft ==# 'css'
+    setlocal omnifunc=csscomplete#CompleteCSS
+  elseif ft ==# 'html' || ft ==# 'htmldjango'
+    setlocal omnifunc=htmlcomplete#CompleteTags
+  elseif ft ==# 'javascript' || ft ==# 'javascriptreact'
+    setlocal omnifunc=javascriptcomplete#CompleteJS
+  elseif ft ==# 'php'
+    setlocal omnifunc=phpcomplete#CompletePHP
+  elseif ft ==# 'ruby'
+    setlocal omnifunc=rubycomplete#Complete
+  elseif ft ==# 'sql'
+    setlocal omnifunc=sqlcomplete#Complete
+  elseif ft ==# 'xml'
+    setlocal omnifunc=xmlcomplete#CompleteTags
+  else
+    setlocal omnifunc=syntaxcomplete#Complete
+  endif
+endfunction
+
+function! HooliesMapsLines() abort
+  return [
+        \ 'Leader is Space. Close with q or Esc.',
+        \ '',
+        \ 'Files',
+        \ '  <Space>e      toggle file explorer',
+        \ '  <Space>ff     find file (:find)',
+        \ '  <Space>fo     recent files',
+        \ '  <Space>flg    git-tracked files',
+        \ '  <Space>sn     nvim/vim config files',
+        \ '',
+        \ 'Buffers',
+        \ '  <Space>fb     pick buffer',
+        \ '  <Space>bb     new empty buffer',
+        \ '  <Space>bd     delete buffer',
+        \ '  <Space>bD     delete buffer and quit',
+        \ '  <Space>bw     wipe buffer',
+        \ '  S-h / S-l     previous / next buffer',
+        \ '  Alt-Esc       close other buffers',
+        \ '',
+        \ 'Search',
+        \ '  <Space>flf    project grep',
+        \ '  <Space>fs     grep word under cursor',
+        \ '  <Space>ft     filter lines in this buffer',
+        \ '  <Space>s/     grep open buffers',
+        \ '  <Space>/      substitute word (or visual sel)',
+        \ '  <Space>fh     help',
+        \ '',
+        \ 'Edit',
+        \ '  <Space>F      format buffer',
+        \ '  <Space>u      undo tree',
+        \ '  <Space>CR     toggle terminal',
+        \ '  <Space>?      this map list',
+        \ '  Alt-j / Alt-k move line (or selection)',
+        \ '  Tab / S-Tab   complete / previous match',
+        \ '  C-Space       omni-complete',
+        \ '',
+        \ 'Windows',
+        \ '  C-h/j/k/l     move (tmux-aware)',
+        \ '  C-arrows      resize splits',
+        \ '',
+        \ 'Other',
+        \ '  Esc           clear search highlight',
+        \ '  jj            leave insert mode',
+        \ '  x / dd        delete without yanking',
+        \ '  Y (visual)    yank to clipboard',
+        \ ]
+endfunction
+
+function! HooliesMapsPopupFilter(id, key) abort
+  " Do not close on '?' or Space: those are the keys that open this popup
+  " (<leader>?), and Vim may still deliver them to the filter.
+  if a:key ==# 'q' || a:key ==# "\<Esc>"
+    call popup_close(a:id)
+    return 1
+  endif
+  return 1
+endfunction
+
+function! HooliesMapsBindClose() abort
+  nnoremap <buffer> <silent> q :close<CR>
+  nnoremap <buffer> <silent> <Esc> :close<CR>
+endfunction
+
+function! HooliesShowMapsNvim(lines) abort
+  let width = 56
+  let height = min([len(a:lines), &lines - 4])
+  let buf = nvim_create_buf(v:false, v:true)
+  call nvim_buf_set_lines(buf, 0, -1, v:true, a:lines)
+  call nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+  call nvim_buf_set_option(buf, 'modifiable', v:false)
+  let opts = {
+        \ 'relative': 'editor',
+        \ 'width': width,
+        \ 'height': height,
+        \ 'row': max([0, (&lines - height) / 2]),
+        \ 'col': max([0, (&columns - width) / 2]),
+        \ 'style': 'minimal',
+        \ }
+  if has('nvim-0.5')
+    let opts.border = 'rounded'
+  endif
+  call nvim_open_win(buf, v:true, opts)
+  call HooliesMapsBindClose()
+endfunction
+
+function! HooliesShowMaps() abort
+  let lines = HooliesMapsLines()
+  if has('nvim') && exists('*nvim_open_win')
+    call HooliesShowMapsNvim(lines)
+    return
+  endif
+  if exists('*popup_create')
+    try
+      call popup_create(lines, {
+            \ 'title': ' Maps ',
+            \ 'pos': 'center',
+            \ 'padding': [1, 2, 1, 2],
+            \ 'border': [],
+            \ 'highlight': 'Pmenu',
+            \ 'borderhighlight': ['Function'],
+            \ 'filter': 'HooliesMapsPopupFilter',
+            \ 'mapping': 0,
+            \ 'wrap': 0,
+            \ 'zindex': 300,
+            \ 'minwidth': 48,
+            \ })
+      return
+    catch
+    endtry
+  endif
+  silent botright 16new
+  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap
+  call setline(1, lines)
+  setlocal nomodifiable
+  call HooliesMapsBindClose()
+endfunction
+
 function! HooliesVimFuncLinkFix() abort
   " Runtime $VIMRUNTIME/syntax/vim.vim links these to vimError → red background
   hi! link vimFunc Function
@@ -456,6 +630,52 @@ function! HooliesApplyColors() abort
     hi SpellLocal gui=undercurl guisp=#9ece6a guifg=NONE guibg=NONE ctermfg=149 ctermbg=NONE cterm=underline
     hi SpellRare gui=undercurl guisp=#bb9af7 guifg=NONE guibg=NONE ctermfg=177 ctermbg=NONE cterm=underline
     hi Function guifg=#7aa2f7 guibg=NONE gui=NONE cterm=NONE
+    hi Constant guifg=#ff9e64 guibg=NONE
+    hi String guifg=#9ece6a guibg=NONE
+    hi Character guifg=#9ece6a guibg=NONE
+    hi Number guifg=#ff9e64 guibg=NONE
+    hi Boolean guifg=#ff9e64 guibg=NONE
+    hi Float guifg=#ff9e64 guibg=NONE
+    hi Identifier guifg=#bb9af7 guibg=NONE
+    hi Statement guifg=#bb9af7 guibg=NONE
+    hi Conditional guifg=#bb9af7 guibg=NONE
+    hi Repeat guifg=#bb9af7 guibg=NONE
+    hi Label guifg=#bb9af7 guibg=NONE
+    hi Operator guifg=#89ddff guibg=NONE
+    hi Keyword guifg=#bb9af7 guibg=NONE
+    hi Exception guifg=#bb9af7 guibg=NONE
+    hi PreProc guifg=#7dcfff guibg=NONE
+    hi Include guifg=#7dcfff guibg=NONE
+    hi Define guifg=#7dcfff guibg=NONE
+    hi Macro guifg=#7dcfff guibg=NONE
+    hi PreCondit guifg=#7dcfff guibg=NONE
+    hi Type guifg=#2ac3de guibg=NONE
+    hi StorageClass guifg=#2ac3de guibg=NONE
+    hi Structure guifg=#2ac3de guibg=NONE
+    hi Typedef guifg=#2ac3de guibg=NONE
+    hi Special guifg=#7aa2f7 guibg=NONE
+    hi SpecialChar guifg=#ff9e64 guibg=NONE
+    hi Tag guifg=#7aa2f7 guibg=NONE
+    hi Delimiter guifg=#89ddff guibg=NONE
+    hi SpecialComment guifg=#565f89 guibg=NONE
+    hi Debug guifg=#ff9e64 guibg=NONE
+    hi Error guifg=#f7768e guibg=NONE
+    hi Todo guifg=#e0af68 guibg=NONE gui=bold
+    hi Title guifg=#7aa2f7 gui=bold
+    hi Directory guifg=#7aa2f7
+    hi MatchParen guifg=#ff9e64 guibg=#3b4261 gui=bold
+    hi Underlined guifg=#7aa2f7 gui=underline
+    hi NonText guifg=#3b4261
+    hi SpecialKey guifg=#3b4261
+    hi Folded guifg=#565f89 guibg=#1f2335
+    hi VertSplit guifg=#1f2335 guibg=#1f2335
+    hi WildMenu guibg=#3e68d7 guifg=#c0caf5
+    hi PmenuSbar guibg=#1f2335
+    hi PmenuThumb guibg=#3b4261
+    hi DiffAdd guibg=#283b4d guifg=NONE
+    hi DiffChange guibg=#272d43 guifg=NONE
+    hi DiffDelete guibg=#3f2d3d guifg=#f7768e
+    hi DiffText guibg=#394b70 guifg=NONE
   else
     hi Normal ctermfg=252 ctermbg=235
     hi Comment ctermfg=60
@@ -470,7 +690,56 @@ function! HooliesApplyColors() abort
     hi SpellLocal ctermfg=149 ctermbg=NONE cterm=underline
     hi SpellRare ctermfg=177 ctermbg=NONE cterm=underline
     hi Function ctermfg=111 ctermbg=NONE cterm=NONE
+    hi Constant ctermfg=215
+    hi String ctermfg=150
+    hi Character ctermfg=150
+    hi Number ctermfg=215
+    hi Boolean ctermfg=215
+    hi Float ctermfg=215
+    hi Identifier ctermfg=176
+    hi Statement ctermfg=141
+    hi Conditional ctermfg=141
+    hi Repeat ctermfg=141
+    hi Label ctermfg=141
+    hi Operator ctermfg=117
+    hi Keyword ctermfg=141
+    hi Exception ctermfg=141
+    hi PreProc ctermfg=117
+    hi Include ctermfg=117
+    hi Define ctermfg=117
+    hi Macro ctermfg=117
+    hi PreCondit ctermfg=117
+    hi Type ctermfg=80
+    hi StorageClass ctermfg=80
+    hi Structure ctermfg=80
+    hi Typedef ctermfg=80
+    hi Special ctermfg=111
+    hi SpecialChar ctermfg=215
+    hi Tag ctermfg=111
+    hi Delimiter ctermfg=117
+    hi SpecialComment ctermfg=60
+    hi Debug ctermfg=215
+    hi Error ctermfg=203
+    hi Todo ctermfg=179 cterm=bold
+    hi Title ctermfg=111 cterm=bold
+    hi Directory ctermfg=111
+    hi MatchParen ctermfg=215 ctermbg=238 cterm=bold
+    hi Underlined ctermfg=111 cterm=underline
+    hi NonText ctermfg=238
+    hi SpecialKey ctermfg=238
+    hi Folded ctermfg=60 ctermbg=234
+    hi VertSplit ctermfg=234 ctermbg=234
+    hi WildMenu ctermbg=61 ctermfg=252
+    hi Pmenu ctermfg=252 ctermbg=234
+    hi PmenuSel ctermfg=252 ctermbg=237
+    hi Visual ctermbg=237
+    hi Search ctermbg=61 ctermfg=252
+    hi StatusLine ctermfg=146 ctermbg=234
+    hi StatusLineNC ctermfg=60 ctermbg=234
   endif
+  hi! link netrwDir Directory
+  hi! link netrwClassify Directory
+  hi! link netrwExe String
   " After syntax reset, runtime vim.vim re-links vimFunc → Error (red bg) for foo( calls.
   call HooliesVimFuncLinkFix()
 endfunction
@@ -542,9 +811,20 @@ if has('termguicolors')
   set termguicolors
 endif
 set visualbell
-set completeopt=menuone
+set completeopt=menuone,noinsert,noselect
+set complete=.,w,b,u,t,i
+set infercase
+set shortmess+=c
 
 set pumheight=12
+
+" Built-in file explorer (no plugins). Lexplore is a left split; Enter opens the file.
+let g:netrw_banner = 0
+let g:netrw_liststyle = 3
+let g:netrw_browse_split = 4
+let g:netrw_altv = 1
+let g:netrw_winsize = 25
+let g:netrw_keepdir = 0
 
 if executable('rg')
   set grepprg=rg\ --vimgrep\ --sort\ path
@@ -569,6 +849,11 @@ if !has('gui_running')
   execute "set <M-k>=\<Esc>k"
 else
   set ttimeoutlen=50
+endif
+
+filetype plugin indent on
+if !exists('g:syntax_on')
+  syntax enable
 endif
 
 call HooliesApplyColors()
@@ -620,7 +905,16 @@ nnoremap <silent> <Esc> :nohlsearch<CR>
 nnoremap <silent> <Leader><CR> :call HooliesFloatingTermToggle()<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 
-nnoremap <silent> <leader>e :Explore<CR>
+nnoremap <silent> <leader>e :call HooliesExploreToggle()<CR>
+nnoremap <silent> <Leader>? :<C-u>call HooliesShowMaps()<CR>
+
+inoremap <silent> <expr> <Tab> HooliesTabComplete()
+inoremap <silent> <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
+inoremap <silent> <expr> <CR> pumvisible() ? "\<C-y>" : "\<CR>"
+inoremap <silent> <C-Space> <C-x><C-o>
+if !has('gui_running')
+  imap <C-@> <C-Space>
+endif
 
 nnoremap <leader>/ :%s/\<<C-r><C-w>\>//g<Left><Left>
 xnoremap <leader>/ y:%s/\V<C-r>=escape(@",'/\')<CR>//g<Left><Left>
@@ -671,6 +965,8 @@ augroup hoolies_vimrc
   autocmd!
   " Spell only where prose is expected (keeps .vimrc / code free of spell highlights)
   autocmd FileType markdown,gitcommit,text,typst,rst setlocal spell
+  autocmd FileType * call HooliesSetOmnifunc()
+  autocmd FileType netrw setlocal nonumber norelativenumber
   autocmd FileType vim call HooliesVimFuncLinkFix()
   autocmd ColorScheme * call HooliesVimFuncLinkFix()
   autocmd VimEnter * call HooliesVimEnterNoArgs()
