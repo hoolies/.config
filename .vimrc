@@ -20,6 +20,16 @@ let s:term_winid = -1
 let s:term_bufnr = -1
 let s:git_branch = ''
 let s:git_branch_dir = ''
+let s:hoolies_ac_timer = -1
+let s:cmd_pal_id = -1
+let s:cmd_pal_typed = ''
+let s:cmd_pal_input = ''
+let s:cmd_pal_idx = -1
+let s:cmd_pal_all = []
+let s:cmd_pal_items = []
+let s:cmd_pal_comps = []
+let s:cmd_pal_comp_i = -1
+let s:cmd_pal_comp_pfx = ''
 
 function! HooliesFloatingTermToggle() abort
   if !has('terminal')
@@ -56,12 +66,17 @@ function! HooliesTermHide() abort
   close
 endfunction
 
-function! HooliesNormalEsc() abort
+function! HooliesEscAfterNoHl() abort
+  " :nohlsearch runs in the mapping itself (must not be only inside a function).
   if &buftype ==# 'terminal'
     call HooliesTermHide()
     return
   endif
-  nohlsearch
+  for m in getmatches()
+    if get(m, 'group', '') ==# 'Search'
+      silent! call matchdelete(m.id)
+    endif
+  endfor
 endfunction
 
 function! HooliesCloseOtherBuffers() abort
@@ -776,6 +791,40 @@ function! HooliesTabComplete() abort
   return "\<C-n>"
 endfunction
 
+function! HooliesAutoComplete() abort
+  if pumvisible() || mode() !=# 'i'
+    return
+  endif
+  if !&modifiable || &readonly || &buftype !=# ''
+    return
+  endif
+  let col = col('.') - 1
+  if col < 2
+    return
+  endif
+  let before = strpart(getline('.'), 0, col)
+  if before !~# '\k\{2}$'
+    return
+  endif
+  call feedkeys("\<C-n>", 'n')
+endfunction
+
+function! HooliesAutoCompleteTick(timer) abort
+  let s:hoolies_ac_timer = -1
+  call HooliesAutoComplete()
+endfunction
+
+function! HooliesAutoCompleteSchedule() abort
+  if has('timers')
+    if s:hoolies_ac_timer != -1
+      call timer_stop(s:hoolies_ac_timer)
+    endif
+    let s:hoolies_ac_timer = timer_start(50, function('HooliesAutoCompleteTick'))
+  else
+    call HooliesAutoComplete()
+  endif
+endfunction
+
 function! HooliesSetOmnifunc() abort
   if &omnifunc !=# ''
     return
@@ -836,7 +885,7 @@ function! HooliesMapsLines() abort
         \ '  <Space>CR     toggle terminal',
         \ '  <Space>?      this map list',
         \ '  Alt-j / Alt-k move line (or selection)',
-        \ '  Tab / S-Tab   complete / previous match',
+        \ '  Tab / S-Tab   next / previous match (auto after 2 letters)',
         \ '  C-Space       omni-complete',
         \ '',
         \ 'Windows',
@@ -844,6 +893,11 @@ function! HooliesMapsLines() abort
         \ '  C-arrows      resize splits',
         \ '',
         \ 'Other',
+        \ '  :             command palette (history + commands)',
+        \ '  : C-p/C-n     previous / next match in the list',
+        \ '  : Tab/S-Tab   complete command names and args',
+        \ '  <Space>:      classic command line',
+        \ '  q:            classic command-line window',
         \ '  (no args)     welcome dashboard',
         \ '  Esc           clear search highlight',
         \ '  Esc Esc       hide terminal (job keeps running)',
@@ -851,6 +905,260 @@ function! HooliesMapsLines() abort
         \ '  x / dd        delete without yanking',
         \ '  Y (visual)    yank to clipboard',
         \ ]
+endfunction
+
+function! HooliesCmdHistory() abort
+  let out = []
+  let i = histnr('cmd')
+  while i >= 1 && len(out) < 80
+    let h = histget('cmd', i)
+    if h !=# '' && index(out, h) < 0
+      call add(out, h)
+    endif
+    let i -= 1
+  endwhile
+  return out
+endfunction
+
+function! HooliesCmdPaletteItems() abort
+  let q = s:cmd_pal_typed
+  let qlow = tolower(q)
+  let items = []
+  let seen = {}
+  let hist_n = 0
+  for h in s:cmd_pal_all
+    if q !=# '' && stridx(tolower(h), qlow) < 0
+      continue
+    endif
+    if has_key(seen, h)
+      continue
+    endif
+    let seen[h] = 1
+    call add(items, {'k': 'h', 't': h})
+    let hist_n += 1
+    if hist_n >= 8
+      break
+    endif
+  endfor
+  if q !=# ''
+    let cmd_n = 0
+    for c in getcompletion(q, 'cmdline')
+      if has_key(seen, c)
+        continue
+      endif
+      let seen[c] = 1
+      call add(items, {'k': 'c', 't': c})
+      let cmd_n += 1
+      if cmd_n >= 8
+        break
+      endif
+    endfor
+  endif
+  return items
+endfunction
+
+function! HooliesCmdPaletteLines() abort
+  let s:cmd_pal_items = HooliesCmdPaletteItems()
+  let lines = ['> ' . s:cmd_pal_input . '▌']
+  call add(lines, repeat('─', 56))
+  if empty(s:cmd_pal_items)
+    call add(lines, '  (type a command — Tab completes names and args)')
+  else
+    let i = 0
+    let have_h = 0
+    let have_c = 0
+    for it in s:cmd_pal_items
+      if it.k ==# 'h' && !have_h
+        call add(lines, 'History')
+        let have_h = 1
+      endif
+      if it.k ==# 'c' && !have_c
+        call add(lines, 'Commands')
+        let have_c = 1
+      endif
+      call add(lines, (i == s:cmd_pal_idx ? '▶ ' : '  ') . it.t)
+      let i += 1
+    endfor
+  endif
+  call add(lines, '')
+  call add(lines, ' Tab complete  ·  C-p/C-n select  ·  Enter run  ·  Esc close')
+  return lines
+endfunction
+
+function! HooliesCmdPaletteRefresh() abort
+  if s:cmd_pal_id < 0 || !exists('*popup_settext')
+    return
+  endif
+  call popup_settext(s:cmd_pal_id, HooliesCmdPaletteLines())
+endfunction
+
+function! HooliesCmdPaletteResetComp() abort
+  let s:cmd_pal_comps = []
+  let s:cmd_pal_comp_i = -1
+  let s:cmd_pal_comp_pfx = ''
+endfunction
+
+function! HooliesCmdPaletteComplete(dir) abort
+  let pfx = s:cmd_pal_typed
+  if s:cmd_pal_comp_i >= 0 && s:cmd_pal_comp_pfx !=# ''
+    let pfx = s:cmd_pal_comp_pfx
+  endif
+  let comps = getcompletion(pfx, 'cmdline')
+  if empty(comps)
+    return
+  endif
+  if s:cmd_pal_comps !=# comps
+    let s:cmd_pal_comps = comps
+    let s:cmd_pal_comp_pfx = pfx
+    let s:cmd_pal_comp_i = a:dir > 0 ? 0 : len(comps) - 1
+  else
+    let n = len(s:cmd_pal_comps)
+    let s:cmd_pal_comp_i = (s:cmd_pal_comp_i + a:dir + n) % n
+  endif
+  let s:cmd_pal_input = s:cmd_pal_comps[s:cmd_pal_comp_i]
+  let s:cmd_pal_typed = s:cmd_pal_input
+  let s:cmd_pal_idx = -1
+endfunction
+
+function! HooliesCmdPaletteHist(dir) abort
+  let items = HooliesCmdPaletteItems()
+  let s:cmd_pal_items = items
+  if empty(items)
+    return
+  endif
+  let last = len(items) - 1
+  if s:cmd_pal_idx < 0
+    let s:cmd_pal_idx = a:dir > 0 ? 0 : last
+  else
+    let s:cmd_pal_idx += a:dir > 0 ? 1 : -1
+    if s:cmd_pal_idx < 0
+      let s:cmd_pal_idx = last
+    elseif s:cmd_pal_idx > last
+      let s:cmd_pal_idx = 0
+    endif
+  endif
+  let s:cmd_pal_input = items[s:cmd_pal_idx].t
+  call HooliesCmdPaletteResetComp()
+endfunction
+
+function! HooliesCmdPaletteRun() abort
+  let cmd = s:cmd_pal_input
+  let id = s:cmd_pal_id
+  let s:cmd_pal_id = -1
+  if id >= 0
+    call popup_close(id)
+  endif
+  if cmd ==# ''
+    return
+  endif
+  call histadd('cmd', cmd)
+  try
+    execute cmd
+  catch /^Vim\%((\a\+)\)\=:E/
+    echohl ErrorMsg
+    echo v:exception
+    echohl None
+  endtry
+endfunction
+
+function! HooliesCmdPaletteSetTyped(text) abort
+  let s:cmd_pal_typed = a:text
+  let s:cmd_pal_input = a:text
+  let s:cmd_pal_idx = -1
+  call HooliesCmdPaletteResetComp()
+endfunction
+
+function! HooliesCmdPaletteFilter(id, key) abort
+  if a:key ==# "\<Esc>" || a:key ==# "\<C-c>"
+    let s:cmd_pal_id = -1
+    call popup_close(a:id)
+    return 1
+  endif
+  if a:key ==# "\<CR>"
+    call HooliesCmdPaletteRun()
+    return 1
+  endif
+  if a:key ==# "\<Tab>"
+    call HooliesCmdPaletteComplete(1)
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  if a:key ==# "\<S-Tab>"
+    call HooliesCmdPaletteComplete(-1)
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  if a:key ==# "\<Up>" || a:key ==# "\<C-p>"
+    call HooliesCmdPaletteHist(1)
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  if a:key ==# "\<Down>" || a:key ==# "\<C-n>"
+    call HooliesCmdPaletteHist(-1)
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  if a:key ==# "\<BS>" || a:key ==# "\b" || a:key ==# "\<C-h>" || a:key ==# "\<Del>"
+    let cur = s:cmd_pal_idx >= 0 ? s:cmd_pal_input : s:cmd_pal_typed
+    if cur !=# ''
+      call HooliesCmdPaletteSetTyped(strcharpart(cur, 0, strchars(cur) - 1))
+      call HooliesCmdPaletteRefresh()
+    endif
+    return 1
+  endif
+  if a:key ==# "\<C-u>"
+    call HooliesCmdPaletteSetTyped('')
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  if a:key ==# "\<C-w>"
+    let cur = s:cmd_pal_idx >= 0 ? s:cmd_pal_input : s:cmd_pal_typed
+    call HooliesCmdPaletteSetTyped(substitute(cur, '\S\+\s*$', '', ''))
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  if strchars(a:key) == 1 && char2nr(a:key) >= 32
+    let cur = s:cmd_pal_idx >= 0 ? s:cmd_pal_input : s:cmd_pal_typed
+    call HooliesCmdPaletteSetTyped(cur . a:key)
+    call HooliesCmdPaletteRefresh()
+    return 1
+  endif
+  return 1
+endfunction
+
+function! HooliesCmdPalette(...) abort
+  if !exists('*popup_create')
+    call feedkeys(':', 'n')
+    return
+  endif
+  let prefill = a:0 ? a:1 : ''
+  let s:cmd_pal_typed = prefill
+  let s:cmd_pal_input = prefill
+  let s:cmd_pal_idx = -1
+  let s:cmd_pal_all = HooliesCmdHistory()
+  let s:cmd_pal_items = []
+  call HooliesCmdPaletteResetComp()
+  let width = min([72, &columns - 6])
+  try
+    let s:cmd_pal_id = popup_create(HooliesCmdPaletteLines(), {
+          \ 'title': ' Command ',
+          \ 'pos': 'center',
+          \ 'minwidth': width,
+          \ 'maxwidth': width,
+          \ 'maxheight': 20,
+          \ 'border': [],
+          \ 'padding': [0, 1, 0, 1],
+          \ 'highlight': 'Pmenu',
+          \ 'borderhighlight': ['Function'],
+          \ 'filter': 'HooliesCmdPaletteFilter',
+          \ 'mapping': 0,
+          \ 'wrap': 0,
+          \ 'zindex': 320,
+          \ })
+  catch
+    let s:cmd_pal_id = -1
+    call feedkeys(':', 'n')
+  endtry
 endfunction
 
 function! HooliesMapsPopupFilter(id, key) abort
@@ -934,8 +1242,10 @@ function! HooliesApplyColors() abort
     exe 'hi TabLineSel guibg=' . s:bg . ' guifg=' . s:fg . ' gui=bold'
     exe 'hi TabLineFill guibg=' . s:bg . ' guifg=' . s:bg
     exe 'hi EndOfBuffer guibg=' . s:bg . ' guifg=' . s:bg
-    hi Pmenu guibg=#1f2335 guifg=#c0caf5
-    hi PmenuSel guibg=#343b58 guifg=#c0caf5
+    hi Pmenu guibg=#292e42 guifg=#c0caf5
+    hi PmenuSel guibg=#3e68d7 guifg=#ffffff gui=bold
+    silent! hi PmenuMatch guifg=#7aa2f7 guibg=#292e42 gui=bold
+    silent! hi PmenuMatchSel guifg=#ffffff guibg=#3e68d7 gui=bold
     hi Visual guibg=#343b58
     " Spell: never use a background (term often simulates undercurl as a block)
     hi SpellBad gui=undercurl guisp=#f7768e guifg=NONE guibg=NONE ctermfg=203 ctermbg=NONE cterm=underline
@@ -982,9 +1292,9 @@ function! HooliesApplyColors() abort
     hi SpecialKey guifg=#3b4261
     hi Folded guifg=#565f89 guibg=#1f2335
     hi VertSplit guifg=#1f2335 guibg=#1f2335
-    hi WildMenu guibg=#3e68d7 guifg=#c0caf5
-    hi PmenuSbar guibg=#1f2335
-    hi PmenuThumb guibg=#3b4261
+    hi WildMenu guibg=#3e68d7 guifg=#ffffff gui=bold
+    hi PmenuSbar guibg=#292e42
+    hi PmenuThumb guibg=#7aa2f7
     hi DiffAdd guibg=#283b4d guifg=NONE
     hi DiffChange guibg=#272d43 guifg=NONE
     hi DiffDelete guibg=#3f2d3d guifg=#f7768e
@@ -1045,9 +1355,13 @@ function! HooliesApplyColors() abort
     hi SpecialKey ctermfg=238
     hi Folded ctermfg=60 ctermbg=234
     hi VertSplit ctermfg=234 ctermbg=234
-    hi WildMenu ctermbg=61 ctermfg=252
-    hi Pmenu ctermfg=252 ctermbg=234
-    hi PmenuSel ctermfg=252 ctermbg=237
+    hi WildMenu ctermbg=61 ctermfg=231 cterm=bold
+    hi Pmenu ctermfg=252 ctermbg=236
+    hi PmenuSel ctermfg=231 ctermbg=61 cterm=bold
+    silent! hi PmenuMatch ctermfg=111 ctermbg=236 cterm=bold
+    silent! hi PmenuMatchSel ctermfg=231 ctermbg=61 cterm=bold
+    hi PmenuSbar ctermbg=236
+    hi PmenuThumb ctermbg=111
     hi Visual ctermbg=237
     hi Search ctermbg=61 ctermfg=252
     hi StatusLine ctermfg=146 ctermbg=234
@@ -1177,6 +1491,7 @@ endif
 
 set wildmenu
 set wildmode=longest:full,full
+set wildignorecase
 if exists('+wildoptions')
   set wildoptions+=pum
   silent! set wildoptions+=fuzzy
@@ -1248,13 +1563,20 @@ tnoremap <silent> <C-l> <C-\><C-n><C-w>l
 
 nnoremap <silent> <leader>u :call HooliesUndotreeToggle()<CR>
 
-nnoremap <silent> <Esc> :call HooliesNormalEsc()<CR>
+nnoremap <silent> <Esc> :<C-u>nohlsearch<CR>:call HooliesEscAfterNoHl()<CR>
 
 nnoremap <silent> <Leader><CR> :call HooliesFloatingTermToggle()<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
 
 nnoremap <silent> <leader>e :call HooliesExploreToggle()<CR>
 nnoremap <silent> <Leader>? :<C-u>call HooliesShowMaps()<CR>
+nnoremap <silent> : <Cmd>call HooliesCmdPalette()<CR>
+xnoremap <silent> : :<C-u>call HooliesCmdPalette("'<,'>")<CR>
+nnoremap <silent> <Leader>: :
+
+" Native cmdline (visual : ranges, feedkeys, q:) — prefix-matching history.
+cnoremap <C-p> <Up>
+cnoremap <C-n> <Down>
 
 inoremap <silent> <expr> <Tab> HooliesTabComplete()
 inoremap <silent> <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
@@ -1317,6 +1639,7 @@ augroup hoolies_vimrc
     autocmd TextYankPost * call HooliesFlashYank()
   endif
   autocmd BufWritePre * call HooliesBufWritePre()
+  autocmd TextChangedI * call HooliesAutoCompleteSchedule()
   autocmd BufReadPost * if line("'\"") >= 1 && line("'\"") <= line('$') | exe "normal! g`\"" | endif
   if exists('##TerminalOpen')
     autocmd TerminalOpen * call HooliesTermSetup()
