@@ -1,0 +1,197 @@
+.TH ZSHRC 1 "2026-09-03" "hoolies" "User Commands"
+.SH NAME
+zshrc \- interactive zsh configuration
+.SH SYNOPSIS
+.B ?
+.RI [ OPTION ]...
+.SH DESCRIPTION
+This is the help for the interactive
+.B ~/.zshrc
+(a symlink to this directory's
+.BR .zshrc ).
+Type
+.B ?
+and Enter to read this page.
+.SH OPTIONS
+Mandatory arguments to long options are mandatory for short options too.
+.TP
+.BR \-h ", " \-\-help
+display a short usage summary and exit
+.SH COMMANDS
+.TP
+.B ?
+display this manual
+.TP
+.B y
+open yazi and
+.B cd
+to the directory you leave in
+.TP
+.B showpath
+print
+.B PATH
+one directory per line (green if it exists, red if not)
+.TP
+.B up
+.RI [ N ]
+.B cd
+up one directory, or
+.I N
+directories
+.TP
+.B fe
+pick files with
+.B fd
+and
+.B fzf
+(bat preview) and open them in
+.B $EDITOR
+.TP
+.B bak
+.I FILE
+copy
+.I FILE
+to
+.IB FILE .YYYYMMDD-HHMMSS
+.TP
+.B _hoolies_update_zsh_plugins
+fast-forward every git plugin under
+.B ~/.zsh
+.SH ALIASES
+.TP
+.B d
+.B dirs \-v
+(directory stack)
+.TP
+.B ls
+.B ls \-\-color=auto \-A \-\-group\-directories\-first
+.TP
+.B ll
+long listing, hidden files, newest last
+.TP
+.B l.
+list only hidden names in the current directory
+.TP
+.BR dmesg ", " diff ", " grep ", " ip
+color output (dmesg is piped to
+.BR less )
+.SH KEY BINDINGS
+Emacs layout
+.RB ( bindkey\ \-e ).
+.TP
+.BR Home " / " End " / " Delete
+beginning of line, end of line, delete character
+.TP
+.B Shift-Tab
+move backward in the completion menu
+.TP
+.B Ctrl-X Ctrl-E
+edit the current command in
+.B $EDITOR
+.TP
+.B Ctrl-Space
+accept the autosuggestion
+.TP
+.BR Up " / " Down " / " Ctrl-P " / " Ctrl-N
+search history for the current prefix
+.TP
+.B Ctrl-T
+fzf file insert (bat preview)
+.TP
+.B Alt-C
+fzf directory
+.B cd
+(tree preview)
+.TP
+.B Ctrl-R
+fzf history with timestamps; inserts the command only
+.TP
+.B Tab
+RTFM / completion (not fzf completion)
+.TP
+.BR Ctrl-W " / " Alt-B " / " Alt-F
+stop at slashes, not whole paths
+.SH PROMPT
+Two lines: cwd in cyan, then the last exit status.
+A blank line is inserted after command output.
+On tall terminals a spacer keeps the prompt off the bottom edge.
+The terminal title is the running command, or
+.B ~/...
+at the prompt.
+.SH DIRECTORY STACK
+.BR AUTO_PUSHD
+and
+.B PUSHD_IGNORE_DUPS
+are on.
+.B cd
+and
+.B up
+push the previous directory without printing the stack.
+.B DIRSTACKSIZE
+is 16.
+Use
+.BR d ,
+.BR "cd \-" ,
+.BR ~1 ,
+.BR ~2 .
+.B AUTO_CD
+is off.
+.SH PATH
+User bins are prepended, missing directories are dropped,
+duplicates are removed:
+.BR /usr/local/go/bin ,
+.BR ~/.cargo/bin ,
+.BR ~/go/bin ,
+.BR ~/.local/bin ,
+then the inherited
+.BR PATH .
+.B EDITOR
+and
+.B VISUAL
+are
+.BR vim .
+.SH HISTORY
+File:
+.BR ~/.local/state/zsh/history
+(or
+.B $XDG_STATE_HOME/zsh/history ).
+10 000 lines, shared, extended timestamps.
+Duplicates and leading-space lines are not saved.
+Unknown command names (typos) are not saved.
+.B HIST_VERIFY
+expands history before running it.
+.SH COMPLETION
+Menu select, case-insensitive matching, cached under
+.BR ~/.cache/zsh/zcompcache .
+.B ls
+colors are applied to completion lists when
+.B dircolors
+exists.
+.SH PLUGINS
+Installed on demand into
+.BR ~/.zsh :
+fzf-dir-navigator, zsh-autosuggestions, zsh-history-substring-search,
+zsh-rtfm, zsh-syntax-highlighting.
+URL quoting and bracketed paste are enabled.
+Syntax highlighting is loaded last.
+.SH FILES
+.TP
+.B ~/.zshrc
+symlink to the tracked
+.B .zshrc
+.TP
+.B zshrc.1
+this manual, in the same directory as the tracked
+.B .zshrc
+.TP
+.B ~/.local/state/zsh/history
+command history
+.TP
+.B ~/.zsh
+plugins
+.SH SEE ALSO
+.BR zsh (1),
+.BR zshzle (1),
+.BR fzf (1),
+.BR fd (1),
+.BR yazi (1)

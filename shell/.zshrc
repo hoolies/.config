@@ -38,10 +38,14 @@ export FZF_CTRL_R_OPTS="
 
 # PATH: user tools first; skip missing dirs; drop duplicates
 typeset -U path
-for _hoolies_dir in /usr/local/go/bin "${HOME}/depot_tools"; do
-    [[ -d "${_hoolies_dir}" ]] && path=("${_hoolies_dir}" "${path[@]}")
-done
-unset _hoolies_dir
+path=(
+    /usr/local/go/bin
+    "${HOME}/.cargo/bin"
+    "${HOME}/go/bin"
+    "${HOME}/.local/bin"
+    $path
+)
+path=( ${^path}(N-/) )
 rehash
 
 export EDITOR=vim
@@ -132,10 +136,124 @@ showpath() {
     done
 }
 
+# cd up N directories (default 1). exec zsh would drop the new pwd.
+up() {
+    emulate -L zsh
+    setopt EXTENDED_GLOB
+    local n=${1:-1} dest=$PWD i
+    if (( $# > 1 )) || [[ -n $1 && $1 != <-> ]]; then
+        printf 'Usage: up [N]\n' >&2
+        return 2
+    fi
+    for (( i = 0; i < n; i++ )); do
+        dest=${dest:h}
+    done
+    builtin cd -- "$dest"
+}
+
+# Pick files with fd+fzf (bat preview) and open in $EDITOR.
+fe() {
+    emulate -L zsh
+    local editor selected
+    local -a files
+    editor=${VISUAL:-${EDITOR:-vim}}
+    if ! command -v fd >/dev/null 2>&1 || ! command -v fzf >/dev/null 2>&1; then
+        printf 'fe: fd and fzf are required\n' >&2
+        return 1
+    fi
+    selected=$(
+        command fd --type f --hidden --follow --exclude .git |
+            command fzf --multi --preview 'bat -n --color=always -- {}'
+    ) || return
+    [[ -n $selected ]] || return 1
+    files=( ${(f)selected} )
+    command "$editor" -- "${files[@]}"
+}
+
+# Copy FILE to FILE.YYYYMMDD-HHMMSS (files or directories).
+bak() {
+    emulate -L zsh
+    local src dest stamp
+    if (( $# != 1 )); then
+        printf 'Usage: bak FILE\n' >&2
+        return 2
+    fi
+    src=$1
+    if [[ ! -e $src ]]; then
+        printf 'bak: %s: No such file or directory\n' "$src" >&2
+        return 1
+    fi
+    stamp=$(command date +%Y%m%d-%H%M%S) || return 1
+    dest=${src}.${stamp}
+    if [[ -e $dest ]]; then
+        printf 'bak: %s already exists\n' "$dest" >&2
+        return 1
+    fi
+    command cp -a -- "$src" "$dest" || return 1
+    printf '%s\n' "$dest"
+}
+
+_hoolies_zshrc_help_usage() {
+    printf '%s\n' \
+        'Usage: ? [OPTION]...' \
+        'Display a manual page for this zsh configuration.' \
+        '' \
+        'Mandatory arguments to long options are mandatory for short options too.' \
+        '' \
+        '  -h, --help            display this help and exit'
+}
+
+# ? is a glob; the alias is expanded before filename generation.
+_hoolies_zshrc_help() {
+    emulate -L zsh
+    local rc page arg
+    for arg in "$@"; do
+        case $arg in
+            -h | --help)
+                _hoolies_zshrc_help_usage
+                return 0
+                ;;
+            --)
+                break
+                ;;
+            -*)
+                printf '?: unrecognized option %s\n' "$arg" >&2
+                printf "Try '? --help' for more information.\n" >&2
+                return 2
+                ;;
+            *)
+                printf '?: extra operand %s\n' "$arg" >&2
+                printf "Try '? --help' for more information.\n" >&2
+                return 2
+                ;;
+        esac
+    done
+    rc=${ZDOTDIR:-$HOME}/.zshrc
+    rc=${rc:A}
+    page=${rc:h}/zshrc.1
+    if [[ ! -f $page ]]; then
+        printf '?: %s: No such file or directory\n' "$page" >&2
+        return 1
+    fi
+    if command -v man >/dev/null 2>&1; then
+        command man -l -- "$page"
+        return $?
+    fi
+    if command -v mandoc >/dev/null 2>&1; then
+        command mandoc -a -- "$page"
+        return $?
+    fi
+    printf '?: man is required to display %s\n' "$page" >&2
+    return 1
+}
+
+alias '?'='_hoolies_zshrc_help'
+
 alias dmesg='dmesg --color=always | less -R'
 alias diff='diff --color=auto'
 alias grep='grep --color=auto'
 alias ip='ip --color=auto'
+alias d='dirs -v'
 alias l.='ls -d .* --color=auto --group-directories-first'
 alias ll='ls --color=auto -lAthr --group-directories-first'
 alias ls='ls --color=auto -A --group-directories-first'
@@ -144,16 +262,29 @@ bindkey -e
 bindkey "${terminfo[khome]:-$'\e[H'}" beginning-of-line
 bindkey "${terminfo[kend]:-$'\e[F'}" end-of-line
 bindkey "${terminfo[kdch1]:-$'\e[3~'}" delete-char
+bindkey "${terminfo[kcbt]:-$'\e[Z'}" reverse-menu-complete
+
+autoload -Uz edit-command-line
+zle -N edit-command-line
+bindkey '^X^E' edit-command-line
 
 # Ctrl-W / Alt-B / Alt-F stop at slashes instead of eating a whole path.
 WORDCHARS=${WORDCHARS//\/}
 
 setopt BEEP EXTENDED_GLOB NOMATCH INTERACTIVE_COMMENTS
+setopt AUTO_PUSHD PUSHD_IGNORE_DUPS PUSHD_SILENT
 unsetopt AUTO_CD
+DIRSTACKSIZE=16
 REPORTTIME=5
 
 # History
-HISTFILE=~/.histfile
+_hoolies_hist_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
+command mkdir -p -- "${_hoolies_hist_dir}"
+HISTFILE="${_hoolies_hist_dir}/history"
+if [[ -f ${HOME}/.histfile && ! -e $HISTFILE ]]; then
+    command mv -- "${HOME}/.histfile" "$HISTFILE"
+fi
+unset _hoolies_hist_dir
 HISTSIZE=10000
 SAVEHIST=$HISTSIZE
 setopt SHARE_HISTORY
@@ -270,7 +401,6 @@ _hoolies_ensure_zsh_plugins
 ZSH_AUTOSUGGEST_MANUAL_REBIND=1
 
 _hoolies_source \
-    "${HOME}/.local/bin/env" \
     "${HOME}/.zsh/fzf-dir-navigator/fzf-dir-navigator.zsh" \
     "${HOME}/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh" \
     "${HOME}/.zsh/zsh-history-substring-search/zsh-history-substring-search.zsh" \
