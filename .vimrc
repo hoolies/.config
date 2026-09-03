@@ -1,6 +1,8 @@
 " Vim configuration — plugin-free port of https://github.com/hoolies/nvim
 " For Vim (available everywhere). Neovim is a separate, unshared config.
 " Single-file: all logic and colors live here (no autoload/ or colors/ files).
+" Canonical path: ~/Projects/Bourne_Again/git_config/.config/.vimrc
+" ~/.vimrc is a symlink to that file.
 
 set nocompatible
 scriptencoding utf-8
@@ -30,6 +32,12 @@ let s:cmd_pal_items = []
 let s:cmd_pal_comps = []
 let s:cmd_pal_comp_i = -1
 let s:cmd_pal_comp_pfx = ''
+let s:pick_id = -1
+let s:pick_query = ''
+let s:pick_all = []
+let s:pick_items = []
+let s:pick_idx = 0
+let s:pick_title = ' Pick '
 
 function! HooliesFloatingTermToggle() abort
   if !has('terminal')
@@ -56,7 +64,7 @@ function! HooliesFloatingTermToggle() abort
 endfunction
 
 function! HooliesTermSetup() abort
-  setlocal nonumber norelativenumber nobuflisted bufhidden=hide noswapfile
+  setlocal nonumber norelativenumber nobuflisted bufhidden=hide noswapfile nolist
 endfunction
 
 function! HooliesTermHide() abort
@@ -103,7 +111,8 @@ function! HooliesUndotreeToggle() abort
   endif
   let ut = undotree()
   silent vertical 40new
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap nonumber norelativenumber
+  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap
+  setlocal nonumber norelativenumber nolist
   let s:undo_bufnr = bufnr('%')
   call setline(1, printf('Undo (seq_cur=%s time_cur=%s)', ut.seq_cur, ut.time_cur))
   call setline(2, 'Enter: undo to seq  |  q: close  |  :earlier :later')
@@ -157,32 +166,213 @@ function! HooliesUndotreeApply() abort
 endfunction
 
 function! HooliesPickerSetup() abort
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap nonumber norelativenumber
+  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap
+  setlocal nonumber norelativenumber nolist
   nnoremap <buffer> <silent> q :bwipeout!<CR>
   nnoremap <buffer> <silent> <Esc> :bwipeout!<CR>
 endfunction
 
+function! HooliesFilterPickerLines() abort
+  let q = tolower(s:pick_query)
+  let s:pick_items = []
+  for it in s:pick_all
+    let hay = tolower(it.label)
+    if has_key(it, 'path')
+      let hay .= ' ' . tolower(it.path)
+    endif
+    if q ==# '' || stridx(hay, q) >= 0
+      call add(s:pick_items, it)
+    endif
+  endfor
+  if s:pick_idx >= len(s:pick_items)
+    let s:pick_idx = max([0, len(s:pick_items) - 1])
+  endif
+  let lines = ['> ' . s:pick_query . '▌']
+  call add(lines, repeat('─', 56))
+  if empty(s:pick_items)
+    call add(lines, '  (no matches)')
+  else
+    let last = len(s:pick_items) - 1
+    let maxn = 16
+    let start = 0
+    if last > maxn
+      let start = max([0, s:pick_idx - maxn / 2])
+      if start + maxn > last
+        let start = last - maxn
+      endif
+    endif
+    let stop = min([last, start + maxn])
+    if start > 0
+      call add(lines, '  … ' . start . ' above')
+    endif
+    let i = start
+    while i <= stop
+      let it = s:pick_items[i]
+      call add(lines, (i == s:pick_idx ? '▶ ' : '  ') . it.label)
+      let i += 1
+    endwhile
+    if stop < last
+      call add(lines, '  … ' . (last - stop) . ' more')
+    endif
+  endif
+  call add(lines, '')
+  call add(lines, ' type to filter  ·  C-p/C-n  ·  Enter open  ·  Esc close')
+  return lines
+endfunction
+
+function! HooliesFilterPickerRefresh() abort
+  if s:pick_id < 0 || !exists('*popup_settext')
+    return
+  endif
+  call popup_settext(s:pick_id, HooliesFilterPickerLines())
+endfunction
+
+function! HooliesFilterPickerAccept() abort
+  if empty(s:pick_items) || s:pick_idx < 0 || s:pick_idx >= len(s:pick_items)
+    return
+  endif
+  let item = s:pick_items[s:pick_idx]
+  let id = s:pick_id
+  let s:pick_id = -1
+  if id >= 0
+    call popup_close(id)
+  endif
+  if item.kind ==# 'buf'
+    if item.id > 0 && bufexists(item.id)
+      execute 'buffer' item.id
+    endif
+  elseif item.path !=# ''
+    execute 'edit' fnameescape(item.path)
+  endif
+endfunction
+
+function! HooliesFilterPickerMove(dir) abort
+  if empty(s:pick_items)
+    return
+  endif
+  let last = len(s:pick_items) - 1
+  let s:pick_idx += a:dir
+  if s:pick_idx < 0
+    let s:pick_idx = last
+  elseif s:pick_idx > last
+    let s:pick_idx = 0
+  endif
+endfunction
+
+function! HooliesFilterPickerFilter(id, key) abort
+  if a:key ==# "\<Esc>" || a:key ==# "\<C-c>"
+    let s:pick_id = -1
+    call popup_close(a:id)
+    return 1
+  endif
+  if a:key ==# "\<CR>"
+    call HooliesFilterPickerAccept()
+    return 1
+  endif
+  if a:key ==# "\<Up>" || a:key ==# "\<C-p>"
+    call HooliesFilterPickerMove(-1)
+    call HooliesFilterPickerRefresh()
+    return 1
+  endif
+  if a:key ==# "\<Down>" || a:key ==# "\<C-n>"
+    call HooliesFilterPickerMove(1)
+    call HooliesFilterPickerRefresh()
+    return 1
+  endif
+  if a:key ==# "\<BS>" || a:key ==# "\b" || a:key ==# "\<C-h>" || a:key ==# "\<Del>"
+    if s:pick_query !=# ''
+      let s:pick_query = strcharpart(s:pick_query, 0, strchars(s:pick_query) - 1)
+      let s:pick_idx = 0
+      call HooliesFilterPickerRefresh()
+    endif
+    return 1
+  endif
+  if a:key ==# "\<C-u>"
+    let s:pick_query = ''
+    let s:pick_idx = 0
+    call HooliesFilterPickerRefresh()
+    return 1
+  endif
+  if strchars(a:key) == 1 && char2nr(a:key) >= 32
+    let s:pick_query .= a:key
+    let s:pick_idx = 0
+    call HooliesFilterPickerRefresh()
+    return 1
+  endif
+  return 1
+endfunction
+
+function! HooliesFilterPickerSplit() abort
+  silent botright 12new
+  call HooliesPickerSetup()
+  let lines = []
+  for it in s:pick_all
+    if it.kind ==# 'buf'
+      call add(lines, it.label . "\t#" . it.id)
+    else
+      call add(lines, it.path)
+    endif
+  endfor
+  call setline(1, lines)
+  if get(s:pick_all, 0, {'kind': ''}).kind ==# 'buf'
+    nnoremap <buffer> <silent> <CR> :call HooliesOpenBufferPickLine()<CR>
+  else
+    nnoremap <buffer> <silent> <CR> :call HooliesOpenOldfileLine()<CR>
+  endif
+endfunction
+
+function! HooliesFilterPicker(title, items) abort
+  if empty(a:items)
+    echohl WarningMsg | echo a:title . ': (empty)' | echohl None
+    return
+  endif
+  let s:pick_title = ' ' . a:title . ' '
+  let s:pick_all = a:items
+  let s:pick_query = ''
+  let s:pick_idx = 0
+  if !exists('*popup_create')
+    call HooliesFilterPickerSplit()
+    return
+  endif
+  let width = min([78, &columns - 6])
+  try
+    let s:pick_id = popup_create(HooliesFilterPickerLines(), {
+          \ 'title': s:pick_title,
+          \ 'pos': 'center',
+          \ 'minwidth': width,
+          \ 'maxwidth': width,
+          \ 'maxheight': 22,
+          \ 'border': [],
+          \ 'padding': [0, 1, 0, 1],
+          \ 'highlight': 'Pmenu',
+          \ 'borderhighlight': ['Function'],
+          \ 'filter': 'HooliesFilterPickerFilter',
+          \ 'mapping': 0,
+          \ 'wrap': 0,
+          \ 'zindex': 310,
+          \ })
+  catch
+    let s:pick_id = -1
+    call HooliesFilterPickerSplit()
+  endtry
+endfunction
+
 function! HooliesOldfilesPick() abort
-  let files = []
+  let items = []
+  let seen = {}
   for path in v:oldfiles
-    let p = expand(path)
-    if p ==# '' || !filereadable(p)
+    let p = resolve(expand(path))
+    if p ==# '' || !filereadable(p) || has_key(seen, p)
       continue
     endif
     " Skip fake buffer names like [Dashboard] stored relative to cwd.
     if fnamemodify(p, ':t') =~# '^\[.\+\]$'
       continue
     endif
-    call add(files, p)
+    let seen[p] = 1
+    call add(items, {'kind': 'file', 'path': p, 'label': fnamemodify(p, ':~')})
   endfor
-  if empty(files)
-    echohl WarningMsg | echo 'No readable oldfiles' | echohl None
-    return
-  endif
-  silent botright 12new
-  call HooliesPickerSetup()
-  call setline(1, files)
-  nnoremap <buffer> <silent> <CR> :call HooliesOpenOldfileLine()<CR>
+  call HooliesFilterPicker('Recent', items)
 endfunction
 
 function! HooliesOpenOldfileLine() abort
@@ -193,14 +383,17 @@ function! HooliesOpenOldfileLine() abort
 endfunction
 
 function! HooliesPickPaths(title, paths) abort
-  if empty(a:paths)
-    echohl WarningMsg | echo a:title . ': (empty)' | echohl None
-    return
-  endif
-  silent botright 12new
-  call HooliesPickerSetup()
-  call setline(1, a:paths)
-  nnoremap <buffer> <silent> <CR> :call HooliesOpenOldfileLine()<CR>
+  let items = []
+  let seen = {}
+  for p in a:paths
+    let path = resolve(expand(p))
+    if path ==# '' || has_key(seen, path)
+      continue
+    endif
+    let seen[path] = 1
+    call add(items, {'kind': 'file', 'path': path, 'label': fnamemodify(path, ':~')})
+  endfor
+  call HooliesFilterPicker(a:title, items)
 endfunction
 
 function! HooliesFindConfigFiles() abort
@@ -208,14 +401,15 @@ function! HooliesFindConfigFiles() abort
         \ expand('~/.config/nvim'),
         \ expand('~/.vim'),
         \ ], 'isdirectory(v:val)')
-  let out = []
+  let out = [
+        \ expand('~/.vimrc'),
+        \ expand('~/Projects/Bourne_Again/git_config/.config/.vimrc'),
+        \ ]
   for r in roots
     let out += glob(r . '/**/*.lua', 0, 1)
     let out += glob(r . '/**/*.vim', 0, 1)
   endfor
-  call sort(out)
-  call uniq(out)
-  call HooliesPickPaths('Config files', out)
+  call HooliesPickPaths('Config', out)
 endfunction
 
 function! HooliesGrepInteractive() abort
@@ -311,26 +505,21 @@ function! HooliesGrepOpenBuffers(pat) abort
 endfunction
 
 function! HooliesBufferPicker() abort
-  call inputsave()
-  let q = input('Filter buffers (empty = all): ')
-  call inputrestore()
-  let lines = []
+  let items = []
   for b in range(1, bufnr('$'))
     if !buflisted(b) | continue | endif
     let n = bufname(b)
-    if n ==# '' | let n = '[No Name]' | endif
-    if q ==# '' || stridx(n, q) != -1
-      call add(lines, n . "\t#" . b)
+    if n ==# ''
+      let label = '[No Name] #' . b
+    else
+      let label = fnamemodify(fnamemodify(n, ':p'), ':~')
     endif
+    if getbufvar(b, '&modified')
+      let label .= ' +'
+    endif
+    call add(items, {'kind': 'buf', 'id': b, 'label': label})
   endfor
-  if empty(lines)
-    echo 'No buffers'
-    return
-  endif
-  silent botright 12new
-  call HooliesPickerSetup()
-  call setline(1, lines)
-  nnoremap <buffer> <silent> <CR> :call HooliesOpenBufferPickLine()<CR>
+  call HooliesFilterPicker('Buffers', items)
 endfunction
 
 function! HooliesOpenBufferPickLine() abort
@@ -376,7 +565,9 @@ function! HooliesFormatBuffer() abort
   elseif ft ==# 'elixir' && executable('mix')
     call HooliesFormatBang('mix format -')
   else
-    silent! normal! gggqG
+    echohl WarningMsg
+    echo 'No formatter for filetype: ' . (ft ==# '' ? '(none)' : ft)
+    echohl None
   endif
   call winrestview(view)
 endfunction
@@ -399,7 +590,7 @@ function! HooliesFormatWritePre() abort
 endfunction
 
 function! HooliesBufWritePre() abort
-  if &modifiable
+  if &modifiable && &filetype !~# '^\(markdown\|diff\|gitcommit\)$'
     keeppatterns %s/\s\+$//e
   endif
   call HooliesFormatWritePre()
@@ -454,23 +645,89 @@ function! HooliesTmuxNavigate(dir) abort
   endif
 endfunction
 
+function! HooliesTablineLabel(b) abort
+  let name = fnamemodify(bufname(a:b), ':t')
+  if name ==# ''
+    let name = '[No Name]'
+  endif
+  if getbufvar(a:b, '&modified')
+    let name .= '+'
+  endif
+  if strdisplaywidth(name) > 18
+    let name = strcharpart(name, 0, 16) . '…'
+  endif
+  return name
+endfunction
+
+function! HooliesTablineItem(b, name, click, current) abort
+  let hl = a:current ? '%#TabLineSel#' : '%#TabLine#'
+  if a:click
+    return hl . '%' . a:b . '@HooliesTablineClick@ ' . a:name . ' %X'
+  endif
+  return hl . ' ' . a:name . ' '
+endfunction
+
 function! HooliesTabline() abort
-  let s = ''
   let click = has('tablineat')
+  let listed = []
   for b in range(1, bufnr('$'))
-    if !buflisted(b) | continue | endif
-    let name = fnamemodify(bufname(b), ':t')
-    if name ==# '' | let name = '[No Name]' | endif
-    if getbufvar(b, '&modified')
-      let name .= '+'
-    endif
-    let s .= (b == bufnr('%') ? '%#TabLineSel#' : '%#TabLine#')
-    if click
-      let s .= '%' . b . '@HooliesTablineClick@ ' . name . ' %X'
-    else
-      let s .= ' ' . name . ' '
+    if buflisted(b)
+      call add(listed, b)
     endif
   endfor
+  if empty(listed)
+    return '%#TabLineFill#'
+  endif
+  let cur = bufnr('%')
+  let labels = []
+  let widths = []
+  for b in listed
+    let name = HooliesTablineLabel(b)
+    call add(labels, name)
+    call add(widths, strdisplaywidth(name) + 2)
+  endfor
+  let total = 0
+  for w in widths
+    let total += w
+  endfor
+  let avail = max([&columns, 20])
+  let show = range(len(listed))
+  if total > avail
+    let curi = index(listed, cur)
+    if curi < 0
+      let curi = 0
+    endif
+    let lo = curi
+    let hi = curi
+    let used = widths[curi]
+    while lo > 0 || hi < len(listed) - 1
+      let grew = 0
+      if hi < len(listed) - 1 && used + widths[hi + 1] + 6 <= avail
+        let hi += 1
+        let used += widths[hi]
+        let grew = 1
+      endif
+      if lo > 0 && used + widths[lo - 1] + 6 <= avail
+        let lo -= 1
+        let used += widths[lo]
+        let grew = 1
+      endif
+      if !grew
+        break
+      endif
+    endwhile
+    let show = range(lo, hi)
+  endif
+  let s = ''
+  if show[0] > 0
+    let s .= '%#TabLine# <' . show[0] . ' '
+  endif
+  for i in show
+    let s .= HooliesTablineItem(listed[i], labels[i], click, listed[i] == cur)
+  endfor
+  if show[-1] < len(listed) - 1
+    let s .= '%#TabLine# ' . (len(listed) - 1 - show[-1]) . '> '
+  endif
   let s .= '%#TabLineFill#'
   return s
 endfunction
@@ -880,6 +1137,15 @@ function! HooliesPairBS() abort
   return "\<BS>"
 endfunction
 
+function! HooliesPairLeftOrBS() abort
+  let prev = HooliesPairPrev()
+  let nxt = HooliesPairNext()
+  if prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# nxt
+    return "\<BS>\<Del>"
+  endif
+  return "\<Left>"
+endfunction
+
 function! HooliesCR() abort
   if pumvisible()
     return "\<C-y>"
@@ -892,11 +1158,20 @@ function! HooliesCR() abort
   return "\<CR>"
 endfunction
 
+function! HooliesInCommentOrString() abort
+  let c = max([1, col('.') - 1])
+  let name = synIDattr(synIDtrans(synID(line('.'), c, 1)), 'name')
+  return name =~? 'comment\|string\|character\|quote'
+endfunction
+
 function! HooliesAutoComplete() abort
   if pumvisible() || mode() !=# 'i'
     return
   endif
   if !&modifiable || &readonly || &buftype !=# ''
+    return
+  endif
+  if HooliesInCommentOrString()
     return
   endif
   let col = col('.') - 1
@@ -958,12 +1233,12 @@ function! HooliesMapsLines() abort
         \ 'Files',
         \ '  <Space>e      toggle file explorer',
         \ '  <Space>ff     find file (:find)',
-        \ '  <Space>fo     recent files',
-        \ '  <Space>flg    git-tracked files',
-        \ '  <Space>sn     nvim/vim config files',
+        \ '  <Space>fo     recent files (type to filter)',
+        \ '  <Space>flg    git-tracked files (type to filter)',
+        \ '  <Space>sn     nvim/vim config files (type to filter)',
         \ '',
         \ 'Buffers',
-        \ '  <Space>fb     pick buffer',
+        \ '  <Space>fb     pick buffer (type to filter)',
         \ '  <Space>bb     new empty buffer',
         \ '  <Space>bd     delete buffer',
         \ '  <Space>bD     delete buffer and quit',
@@ -1495,7 +1770,7 @@ endfunction
 
 set autoindent
 set scrolloff=999
-set showmatch
+set noshowmatch
 set splitright
 set splitbelow
 set diffopt+=vertical
@@ -1547,6 +1822,14 @@ set softtabstop=4
 set tabstop=4
 set backspace=indent,eol,start
 set virtualedit=block
+if exists('+splitkeep')
+  set splitkeep=screen
+endif
+if exists('+jumpoptions')
+  set jumpoptions+=stack
+endif
+set list
+let &listchars = 'tab:» ,trail:·,extends:»,precedes:«,nbsp:␣'
 
 set undodir=~/.vim/undodir
 set undofile
@@ -1573,7 +1856,7 @@ if has('termguicolors')
 endif
 set visualbell
 set completeopt=menuone,noselect
-set complete=.,w,b,u,t,i
+set complete=.,w,b,u,t
 set infercase
 set shortmess+=c
 
@@ -1600,6 +1883,10 @@ if exists('+wildoptions')
   silent! set wildoptions+=fuzzy
 endif
 set path+=**
+set wildignore+=*/.git/*,*/.hg/*,*/.svn/*
+set wildignore+=*/node_modules/*,*/target/*,*/dist/*,*/build/*,*/.build/*
+set wildignore+=*/__pycache__/*,*/.mypy_cache/*,*/.venv/*,*/venv/*,*/.tox/*
+set wildignore+=*.o,*.obj,*.pyc,*.pyo,*.so,*.class,*.swp,*.swo,*~
 
 set tabline=%!HooliesTabline()
 set laststatus=2
@@ -1640,7 +1927,7 @@ nnoremap <silent> <C-Right> :vertical resize +2<CR>
 
 inoremap <C-k> <Up>
 inoremap <C-j> <Down>
-inoremap <C-h> <Left>
+inoremap <silent> <expr> <C-h> HooliesPairLeftOrBS()
 inoremap <C-l> <Right>
 inoremap jj <Esc>
 
@@ -1744,7 +2031,7 @@ augroup hoolies_vimrc
   autocmd FileType hoolies_dashboard call HooliesDashboardHighlight()
   autocmd FileType markdown,gitcommit,text,typst,rst setlocal spell
   autocmd FileType * call HooliesSetOmnifunc()
-  autocmd FileType netrw setlocal nonumber norelativenumber
+  autocmd FileType netrw setlocal nonumber norelativenumber nolist
   autocmd FileType vim call HooliesVimFuncLinkFix()
   autocmd ColorScheme * call HooliesVimFuncLinkFix()
   autocmd VimEnter * call HooliesVimEnterNoArgs()
