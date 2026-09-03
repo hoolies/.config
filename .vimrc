@@ -791,6 +791,107 @@ function! HooliesTabComplete() abort
   return "\<C-n>"
 endfunction
 
+let s:pair_close = {'(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`'}
+
+function! HooliesPairNext() abort
+  return strpart(getline('.'), col('.') - 1, 1)
+endfunction
+
+function! HooliesPairPrev() abort
+  let c = col('.') - 2
+  if c < 0
+    return ''
+  endif
+  return strpart(getline('.'), c, 1)
+endfunction
+
+function! HooliesPairInString() abort
+  let c = col('.')
+  if c <= 1
+    return 0
+  endif
+  let name = synIDattr(synIDtrans(synID(line('.'), c - 1, 1)), 'name')
+  return name =~? 'string\|character\|quote'
+endfunction
+
+function! HooliesPairShouldOpen(open) abort
+  if &paste || !&modifiable || &readonly || &buftype !=# ''
+    return 0
+  endif
+  if (a:open ==# '"' || a:open ==# "'" || a:open ==# '`') && HooliesPairInString()
+    return 0
+  endif
+  if a:open ==# "'" && &filetype =~# '^\(rust\|lisp\|scheme\|clojure\)$'
+    return 0
+  endif
+  let nxt = HooliesPairNext()
+  if nxt !=# '' && nxt !~# '[[:space:])\]}>,;:]'
+    return 0
+  endif
+  let prev = HooliesPairPrev()
+  if a:open ==# "'" && prev =~# '\k\|[''"/\\]'
+    return 0
+  endif
+  if (a:open ==# '"' || a:open ==# "'" || a:open ==# '`') && prev ==# a:open
+    return 0
+  endif
+  if a:open ==# '"' && prev =~# '\k'
+    return 0
+  endif
+  return 1
+endfunction
+
+function! HooliesPairOpen(open) abort
+  if !HooliesPairShouldOpen(a:open)
+    return a:open
+  endif
+  return a:open . s:pair_close[a:open] . "\<Left>"
+endfunction
+
+function! HooliesPairClose(close) abort
+  if &paste
+    return a:close
+  endif
+  if HooliesPairNext() ==# a:close
+    return "\<Right>"
+  endif
+  return a:close
+endfunction
+
+function! HooliesPairQuote(q) abort
+  if &paste
+    return a:q
+  endif
+  if HooliesPairNext() ==# a:q
+    return "\<Right>"
+  endif
+  if HooliesPairShouldOpen(a:q)
+    return a:q . a:q . "\<Left>"
+  endif
+  return a:q
+endfunction
+
+function! HooliesPairBS() abort
+  let prev = HooliesPairPrev()
+  let nxt = HooliesPairNext()
+  if prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# nxt
+    return "\<BS>\<Del>"
+  endif
+  return "\<BS>"
+endfunction
+
+function! HooliesCR() abort
+  if pumvisible()
+    return "\<C-y>"
+  endif
+  let prev = HooliesPairPrev()
+  let nxt = HooliesPairNext()
+  if prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# nxt
+    return "\<CR>\<Esc>O"
+  endif
+  return "\<CR>"
+endfunction
+
 function! HooliesAutoComplete() abort
   if pumvisible() || mode() !=# 'i'
     return
@@ -887,6 +988,8 @@ function! HooliesMapsLines() abort
         \ '  Alt-j / Alt-k move line (or selection)',
         \ '  Tab / S-Tab   next / previous match (auto after 2 letters)',
         \ '  C-Space       omni-complete',
+        \ '  ( [ { " '' `  auto-close; type closer to skip over',
+        \ '  BS            delete empty pair',
         \ '',
         \ 'Windows',
         \ '  C-h/j/k/l     move (tmux-aware)',
@@ -1580,7 +1683,17 @@ cnoremap <C-n> <Down>
 
 inoremap <silent> <expr> <Tab> HooliesTabComplete()
 inoremap <silent> <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
-inoremap <silent> <expr> <CR> pumvisible() ? "\<C-y>" : "\<CR>"
+inoremap <silent> <expr> <CR> HooliesCR()
+inoremap <silent> <expr> <BS> HooliesPairBS()
+inoremap <silent> <expr> ( HooliesPairOpen('(')
+inoremap <silent> <expr> [ HooliesPairOpen('[')
+inoremap <silent> <expr> { HooliesPairOpen('{')
+inoremap <silent> <expr> ) HooliesPairClose(')')
+inoremap <silent> <expr> ] HooliesPairClose(']')
+inoremap <silent> <expr> } HooliesPairClose('}')
+inoremap <silent> <expr> " HooliesPairQuote('"')
+inoremap <silent> <expr> ' HooliesPairQuote("'")
+inoremap <silent> <expr> ` HooliesPairQuote('`')
 inoremap <silent> <C-Space> <C-x><C-o>
 if !has('gui_running')
   imap <C-@> <C-Space>
