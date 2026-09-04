@@ -51,7 +51,10 @@ rehash
 export EDITOR=vim
 export VISUAL="$EDITOR"
 
+zmodload zsh/datetime
+
 _hoolies_prompt_pad=5
+typeset -g _hoolies_cmd_start
 
 # Blank line after command output
 _hoolies_prompt_blank() {
@@ -66,6 +69,53 @@ _hoolies_prompt_spacer() {
     (( LINES >= pad + 8 )) || return 0
     printf '\n%.0s' {1..$pad}
     printf '\033[%dA' $((pad + 1))
+}
+
+_hoolies_fmt_cmd_duration() {
+    emulate -L zsh
+    local -F elapsed=$1
+    local -i h m s
+    if (( elapsed >= 3600 )); then
+        h=$(( elapsed / 3600 ))
+        m=$(( (elapsed % 3600) / 60 ))
+        s=$(( elapsed % 60 ))
+        printf '%dh%02dm%02ds' h m s
+    elif (( elapsed >= 60 )); then
+        m=$(( elapsed / 60 ))
+        s=$(( elapsed % 60 ))
+        printf '%dm%02ds' m s
+    else
+        printf '%.2fs' $elapsed
+    fi
+}
+
+_hoolies_prompt_timer_preexec() {
+    _hoolies_cmd_start=$EPOCHREALTIME
+}
+
+# Path on line 1; last-command wall time flush right. Empty Enter hides it.
+_hoolies_prompt_set() {
+    emulate -L zsh
+    local elapsed_str path_disp
+    local -i pad vis cols
+    local -F elapsed
+
+    cols=${COLUMNS:-80}
+    if [[ -n $_hoolies_cmd_start ]]; then
+        elapsed=$(( EPOCHREALTIME - _hoolies_cmd_start ))
+        elapsed_str=$(_hoolies_fmt_cmd_duration $elapsed)
+        unset _hoolies_cmd_start
+    fi
+
+    if [[ -n $elapsed_str ]]; then
+        path_disp=${(%):-%~}
+        vis=$(( 1 + ${#path_disp} + ${#elapsed_str} ))
+        pad=$(( cols - vis ))
+        (( pad < 1 )) && pad=1
+        PS1=$'\n %F{cyan}%~%f'"${(l:pad:: :)}%F{yellow}${elapsed_str}%f"$'\n %F{white}%?  '
+    else
+        PS1=$'\n %F{cyan}%~%f\n %F{white}%?  '
+    fi
 }
 
 PS1="
@@ -89,8 +139,10 @@ _hoolies_title_precmd() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _hoolies_prompt_blank
 add-zsh-hook precmd _hoolies_prompt_spacer
+add-zsh-hook precmd _hoolies_prompt_set
 add-zsh-hook precmd _hoolies_title_precmd
 add-zsh-hook preexec _hoolies_title_preexec
+add-zsh-hook preexec _hoolies_prompt_timer_preexec
 
 _fzf_compgen_path() {
     fd --type f --hidden --follow --exclude .git -- . "$1"
@@ -253,7 +305,6 @@ alias dmesg='dmesg --color=always | less -R'
 alias diff='diff --color=auto'
 alias grep='grep --color=auto'
 alias ip='ip --color=auto'
-alias d='dirs -v'
 alias l.='ls -d .* --color=auto --group-directories-first'
 alias ll='ls --color=auto -lAthr --group-directories-first'
 alias ls='ls --color=auto -A --group-directories-first'

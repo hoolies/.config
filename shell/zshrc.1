@@ -1,4 +1,4 @@
-.TH ZSHRC 1 "2026-09-03" "hoolies" "User Commands"
+.TH ZSHRC 1 "2026-09-04" "hoolies" "User Commands"
 .SH NAME
 zshrc \- interactive zsh configuration
 .SH SYNOPSIS
@@ -113,6 +113,12 @@ RTFM / completion (not fzf completion)
 stop at slashes, not whole paths
 .SH PROMPT
 Two lines: cwd in cyan, then the last exit status.
+After a command, its wall-clock duration is right-aligned in yellow
+on the path line
+.RI ( 0.42s ,
+.IR 1m05s ,
+.IR 1h02m03s ).
+Pressing Enter with an empty line hides the duration.
 A blank line is inserted after command output.
 On tall terminals a spacer keeps the prompt off the bottom edge.
 The terminal title is the running command, or
