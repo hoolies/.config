@@ -2,7 +2,23 @@
 
 Dotfiles I share as this folder.
 
-Neovim is **not** in here on purpose. `nvim/` is gitignored. That config is LazyVim, plugin-heavy, and local to machines that have it. I do not want to publish or sync it with these files.
+
+## Install
+
+Clone this repository to `/opt/.config`, then run `bootstrap.sh`. It creates one symlink per file into `$HOME`. Existing files and symlinks are overwritten. `xfce4/` is machine-local and is not linked.
+
+```sh
+git clone https://github.com/hoolies/.config /opt/
+/opt/.config/bootstrap.sh
+```
+
+| Source | Destination |
+| --- | --- |
+| `/opt/.config/.vimrc` | `~/.vimrc` |
+| `/opt/.config/shell/.zshrc` | `~/.zshrc` |
+| everything else | `~/.config/<same path>` |
+
+Skipped: `.git/`, `xfce4/`, `.gitignore`, `README.md`, and `bootstrap.sh`.
 
 ## Configurations
 
@@ -23,7 +39,7 @@ Neovim is **not** in here on purpose. `nvim/` is gitignored. That config is Lazy
 
 ## Vim
 
-`.vimrc` is the portable, plugin-free editor config. Single file: all logic and colors live here (no `autoload/` or `colors/`). `~/.vimrc` is a symlink to this file.
+`.vimrc` is the portable, plugin-free editor config in a single file.
 
 Leader is Space. Same habits as the local Neovim setup (leader, clipboard, colors, navigation) without plugins.
 
