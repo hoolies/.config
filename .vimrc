@@ -21,6 +21,7 @@ let s:git_branch = ''
 let s:git_branch_dir = ''
 let s:hoolies_ac_timer = -1
 let s:cmd_pal_id = -1
+let s:cmd_pal_menu = -1
 let s:cmd_pal_typed = ''
 let s:cmd_pal_input = ''
 let s:cmd_pal_idx = -1
@@ -29,6 +30,7 @@ let s:cmd_pal_items = []
 let s:cmd_pal_comps = []
 let s:cmd_pal_comp_i = -1
 let s:cmd_pal_comp_pfx = ''
+let s:cmd_pal_width = 72
 let s:pick_id = -1
 let s:pick_query = ''
 let s:pick_all = []
@@ -1540,8 +1542,27 @@ function! HooliesTablineClick(minwid, nclicks, button, mods) abort
   endif
 endfunction
 
+function! HooliesSearchCount() abort
+  if !v:hlsearch || !exists('*searchcount') || @/ ==# ''
+    return ''
+  endif
+  try
+    let info = searchcount({'recompute': 1, 'maxcount': 99, 'timeout': 50})
+  catch
+    return ''
+  endtry
+  if empty(info) || get(info, 'total', 0) == 0 || get(info, 'incomplete', 0) == 1
+    return ''
+  endif
+  let tot = info.total
+  if get(info, 'incomplete', 0) == 2
+    return printf('[%d/%d+] ', info.current, tot)
+  endif
+  return printf('[%d/%d] ', info.current, tot)
+endfunction
+
 function! HooliesStatusLine() abort
-  return '%<%f %h%w%m%{HooliesStatusFlags()}%{HooliesStatusGit()}%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
+  return '%<%f %h%w%m%{HooliesStatusFlags()}%{HooliesStatusGit()}%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %{HooliesSearchCount()}%l,%c/%L %P'
 endfunction
 
 function! HooliesSeedViminfo() abort
@@ -2217,13 +2238,13 @@ function! HooliesMapsLines() abort
         \ '  C-arrows      resize splits',
         \ '',
         \ 'Other',
-        \ '  :             command palette (history + commands)',
-        \ '  : C-p/C-n     previous / next match in the list',
+        \ '  :             command (Tab completion popup)',
+        \ '  : C-p/C-n     previous / next suggestion',
         \ '  : Tab/S-Tab   complete command names and args',
         \ '  <Space>:      classic command line',
         \ '  q:            classic command-line window',
         \ '  (no args)     welcome dashboard',
-        \ '  Esc           clear search highlight',
+        \ '  / n N        search ([2/5] on the statusline)',
         \ '  Esc Esc       hide terminal (job keeps running)',
         \ '  jj            leave insert mode',
         \ '  x / dd        delete without yanking',
@@ -2260,7 +2281,7 @@ function! HooliesCmdPaletteItems() abort
     let seen[h] = 1
     call add(items, {'k': 'h', 't': h})
     let hist_n += 1
-    if hist_n >= 8
+    if hist_n >= 12
       break
     endif
   endfor
@@ -2273,7 +2294,7 @@ function! HooliesCmdPaletteItems() abort
       let seen[c] = 1
       call add(items, {'k': 'c', 't': c})
       let cmd_n += 1
-      if cmd_n >= 8
+      if cmd_n >= 12
         break
       endif
     endfor
@@ -2281,39 +2302,98 @@ function! HooliesCmdPaletteItems() abort
   return items
 endfunction
 
-function! HooliesCmdPaletteLines() abort
-  let s:cmd_pal_items = HooliesCmdPaletteItems()
-  let lines = ['> ' . s:cmd_pal_input . '▌']
-  call add(lines, repeat('─', 56))
-  if empty(s:cmd_pal_items)
-    call add(lines, '  (type a command — Tab completes names and args)')
-  else
-    let i = 0
-    let have_h = 0
-    let have_c = 0
-    for it in s:cmd_pal_items
-      if it.k ==# 'h' && !have_h
-        call add(lines, 'History')
-        let have_h = 1
-      endif
-      if it.k ==# 'c' && !have_c
-        call add(lines, 'Commands')
-        let have_c = 1
-      endif
-      call add(lines, (i == s:cmd_pal_idx ? '▶ ' : '  ') . it.t)
-      let i += 1
-    endfor
+function! HooliesCmdPalettePrompt() abort
+  let s = ': ' . s:cmd_pal_input . '▌'
+  let w = s:cmd_pal_width
+  if strchars(s) > w
+    let s = '…' . strcharpart(s, strchars(s) - w + 1)
   endif
-  call add(lines, '')
-  call add(lines, ' Tab complete  ·  C-p/C-n select  ·  Enter run  ·  Esc close')
-  return lines
+  return s
+endfunction
+
+function! HooliesCmdPaletteCloseMenu() abort
+  if s:cmd_pal_menu >= 0
+    call popup_close(s:cmd_pal_menu)
+    let s:cmd_pal_menu = -1
+  endif
+endfunction
+
+function! HooliesCmdPaletteClosed(id, result) abort
+  let s:cmd_pal_id = -1
+  call HooliesCmdPaletteCloseMenu()
+endfunction
+
+function! HooliesCmdPaletteMenuRefresh() abort
+  let s:cmd_pal_items = HooliesCmdPaletteItems()
+  let lines = []
+  for it in s:cmd_pal_items
+    call add(lines, it.t)
+  endfor
+  if empty(lines) || s:cmd_pal_id < 0
+    call HooliesCmdPaletteCloseMenu()
+    return
+  endif
+  let pos = popup_getpos(s:cmd_pal_id)
+  if empty(pos)
+    call HooliesCmdPaletteCloseMenu()
+    return
+  endif
+  let below = pos.line + pos.height
+  let room = &lines - below
+  let maxh = min([12, len(lines), max([1, room - 1])])
+  let opts = {
+        \ 'col': pos.col,
+        \ 'minwidth': s:cmd_pal_width,
+        \ 'maxwidth': s:cmd_pal_width,
+        \ 'minheight': 1,
+        \ 'maxheight': maxh,
+        \ 'wrap': 0,
+        \ 'scrollbar': 1,
+        \ 'highlight': 'Pmenu',
+        \ 'padding': [0, 1, 0, 1],
+        \ 'border': [],
+        \ 'borderhighlight': ['Pmenu'],
+        \ 'mapping': 0,
+        \ 'firstline': 0,
+        \ 'zindex': 310,
+        \ }
+  if room >= 3
+    let opts.line = below
+    let opts.pos = 'topleft'
+  else
+    let opts.line = pos.line
+    let opts.pos = 'botleft'
+    let opts.maxheight = min([12, len(lines), max([1, pos.line - 2])])
+  endif
+  if s:cmd_pal_idx >= len(s:cmd_pal_items)
+    let s:cmd_pal_idx = len(s:cmd_pal_items) - 1
+  endif
+  let opts.cursorline = s:cmd_pal_idx >= 0
+  if s:cmd_pal_menu >= 0 && empty(popup_getpos(s:cmd_pal_menu))
+    let s:cmd_pal_menu = -1
+  endif
+  if s:cmd_pal_menu >= 0
+    call popup_settext(s:cmd_pal_menu, lines)
+    call popup_setoptions(s:cmd_pal_menu, opts)
+  else
+    try
+      let s:cmd_pal_menu = popup_create(lines, opts)
+    catch
+      let s:cmd_pal_menu = -1
+      return
+    endtry
+  endif
+  if s:cmd_pal_idx >= 0 && exists('*win_execute')
+    call win_execute(s:cmd_pal_menu, 'call cursor(' . (s:cmd_pal_idx + 1) . ', 1)')
+  endif
 endfunction
 
 function! HooliesCmdPaletteRefresh() abort
   if s:cmd_pal_id < 0 || !exists('*popup_settext')
     return
   endif
-  call popup_settext(s:cmd_pal_id, HooliesCmdPaletteLines())
+  call popup_settext(s:cmd_pal_id, [HooliesCmdPalettePrompt()])
+  call HooliesCmdPaletteMenuRefresh()
 endfunction
 
 function! HooliesCmdPaletteResetComp() abort
@@ -2342,6 +2422,14 @@ function! HooliesCmdPaletteComplete(dir) abort
   let s:cmd_pal_input = s:cmd_pal_comps[s:cmd_pal_comp_i]
   let s:cmd_pal_typed = s:cmd_pal_input
   let s:cmd_pal_idx = -1
+  let i = 0
+  for it in HooliesCmdPaletteItems()
+    if it.t ==# s:cmd_pal_input
+      let s:cmd_pal_idx = i
+      break
+    endif
+    let i += 1
+  endfor
 endfunction
 
 function! HooliesCmdPaletteHist(dir) abort
@@ -2369,6 +2457,7 @@ function! HooliesCmdPaletteRun() abort
   let cmd = s:cmd_pal_input
   let id = s:cmd_pal_id
   let s:cmd_pal_id = -1
+  call HooliesCmdPaletteCloseMenu()
   if id >= 0
     call popup_close(id)
   endif
@@ -2395,6 +2484,7 @@ endfunction
 function! HooliesCmdPaletteFilter(id, key) abort
   if a:key ==# "\<Esc>" || a:key ==# "\<C-c>"
     let s:cmd_pal_id = -1
+    call HooliesCmdPaletteCloseMenu()
     call popup_close(a:id)
     return 1
   endif
@@ -2461,26 +2551,31 @@ function! HooliesCmdPalette(...) abort
   let s:cmd_pal_idx = -1
   let s:cmd_pal_all = HooliesCmdHistory()
   let s:cmd_pal_items = []
+  let s:cmd_pal_menu = -1
   call HooliesCmdPaletteResetComp()
-  let width = min([72, &columns - 6])
+  let s:cmd_pal_width = min([72, &columns - 6])
   try
-    let s:cmd_pal_id = popup_create(HooliesCmdPaletteLines(), {
+    let s:cmd_pal_id = popup_create([HooliesCmdPalettePrompt()], {
           \ 'title': ' Command ',
           \ 'pos': 'center',
-          \ 'minwidth': width,
-          \ 'maxwidth': width,
-          \ 'maxheight': 20,
+          \ 'minwidth': s:cmd_pal_width,
+          \ 'maxwidth': s:cmd_pal_width,
+          \ 'minheight': 1,
+          \ 'maxheight': 1,
           \ 'border': [],
           \ 'padding': [0, 1, 0, 1],
           \ 'highlight': 'Pmenu',
           \ 'borderhighlight': ['Function'],
           \ 'filter': 'HooliesCmdPaletteFilter',
+          \ 'callback': 'HooliesCmdPaletteClosed',
           \ 'mapping': 0,
           \ 'wrap': 0,
           \ 'zindex': 320,
           \ })
+    call HooliesCmdPaletteMenuRefresh()
   catch
     let s:cmd_pal_id = -1
+    call HooliesCmdPaletteCloseMenu()
     call feedkeys(':', 'n')
   endtry
 endfunction
@@ -2519,14 +2614,6 @@ function! HooliesMapsSearchGo(dir) abort
   endif
 endfunction
 
-function! HooliesMapsPopupSetTitle(id) abort
-  if !exists('*popup_setoptions')
-    return
-  endif
-  let title = s:maps_searching ? ' /' . s:maps_query . ' ' : ' Maps '
-  call popup_setoptions(a:id, {'title': title})
-endfunction
-
 function! HooliesMapsPopupClosed(id, result) abort
   let s:maps_query = ''
   let s:maps_searching = 0
@@ -2544,12 +2631,10 @@ function! HooliesMapsPopupFilter(id, key) abort
       if exists('*win_execute')
         call win_execute(a:id, 'call HooliesMapsSearchClear()')
       endif
-      call HooliesMapsPopupSetTitle(a:id)
       return 1
     endif
     if a:key ==# "\<CR>"
       let s:maps_searching = 0
-      call HooliesMapsPopupSetTitle(a:id)
       return 1
     endif
     if a:key ==# "\<BS>" || a:key ==# "\b" || a:key ==# "\<C-h>"
@@ -2559,7 +2644,6 @@ function! HooliesMapsPopupFilter(id, key) abort
       if exists('*win_execute')
         call win_execute(a:id, 'call HooliesMapsSearchGo(0)')
       endif
-      call HooliesMapsPopupSetTitle(a:id)
       return 1
     endif
     if a:key ==# "\<C-u>"
@@ -2567,7 +2651,6 @@ function! HooliesMapsPopupFilter(id, key) abort
       if exists('*win_execute')
         call win_execute(a:id, 'call HooliesMapsSearchGo(0)')
       endif
-      call HooliesMapsPopupSetTitle(a:id)
       return 1
     endif
     if strchars(a:key) == 1 && char2nr(a:key) >= 32
@@ -2575,7 +2658,6 @@ function! HooliesMapsPopupFilter(id, key) abort
       if exists('*win_execute')
         call win_execute(a:id, 'call HooliesMapsSearchGo(0)')
       endif
-      call HooliesMapsPopupSetTitle(a:id)
     endif
     return 1
   endif
@@ -2590,7 +2672,6 @@ function! HooliesMapsPopupFilter(id, key) abort
     let s:maps_searching = 1
     let s:maps_query = ''
     call win_execute(a:id, 'call HooliesMapsSearchBegin()')
-    call HooliesMapsPopupSetTitle(a:id)
   elseif a:key ==# 'n' && s:maps_query !=# ''
     call win_execute(a:id, 'call HooliesMapsSearchGo(1)')
   elseif a:key ==# 'N' && s:maps_query !=# ''
@@ -2931,6 +3012,7 @@ set completeopt=menuone,noselect
 set complete=.,w,b,u,t
 set infercase
 set shortmess+=c
+set shortmess-=S
 
 set pumheight=12
 

@@ -67,6 +67,7 @@ Leader is Space. Same habits as the local Neovim setup (leader, clipboard, color
 * `<Space>ql` — load session
 * `]q` / `[q` — next / previous quickfix
 * `]Q` / `[Q` — last / first quickfix
+* `/` `n` `N` — search; statusline shows `[2/5]`
 
 **Edit**
 
@@ -88,8 +89,8 @@ Leader is Space. Same habits as the local Neovim setup (leader, clipboard, color
 
 **Other**
 
-* `:` — command palette (history + commands)
-* `: C-p/C-n` — previous / next match in the list
+* `:` — command (centered; Tab completion popup)
+* `: C-p/C-n` — previous / next suggestion
 * `: Tab/S-Tab` — complete command names and args
 * `<Space>:` — classic command line
 * `q:` — classic command-line window
