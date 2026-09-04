@@ -38,6 +38,9 @@ let s:pick_all = []
 let s:pick_items = []
 let s:pick_idx = 0
 let s:pick_title = ' Pick '
+let s:pick_mode = 'filter'
+let s:pick_grep_timer = -1
+let s:pick_grep_regex = 0
 
 function! HooliesFloatingTermToggle() abort
   if !has('terminal')
@@ -85,6 +88,16 @@ function! HooliesEscAfterNoHl() abort
       silent! call matchdelete(m.id)
     endif
   endfor
+endfunction
+
+function! HooliesEscExpr() abort
+  " Lone Esc clears search. If more bytes are already queued (arrows / Alt),
+  " do not consume the Esc prefix.
+  let peek = getchar(0)
+  if peek != 0
+    return "\<Esc>" . (type(peek) == v:t_number ? nr2char(peek) : peek)
+  endif
+  return ":\<C-u>nohlsearch\<CR>:call HooliesEscAfterNoHl()\<CR>"
 endfunction
 
 function! HooliesCloseOtherBuffers() abort
@@ -138,14 +151,30 @@ function! HooliesUndotreeLines(entries, indent) abort
       call add(lines, repeat('  ', a:indent) . string(e))
       continue
     endif
-    call add(lines, printf('%sseq=%s time=%s save=%s',
+    call add(lines, printf('%sseq=%s  %s  save=%s',
           \ repeat('  ', a:indent),
-          \ get(e, 'seq', '?'), get(e, 'time', '?'), get(e, 'save', '?')))
+          \ get(e, 'seq', '?'),
+          \ HooliesUndoTime(get(e, 'time', 0)),
+          \ get(e, 'save', '?')))
     if has_key(e, 'alt') && type(e.alt) == v:t_list
       let lines += HooliesUndotreeLines(e.alt, a:indent + 1)
     endif
   endfor
   return lines
+endfunction
+
+function! HooliesUndoTime(ts) abort
+  if type(a:ts) == v:t_number
+    let t = a:ts
+  elseif type(a:ts) == v:t_string && a:ts =~# '^\d\+$'
+    let t = str2nr(a:ts)
+  else
+    return string(a:ts)
+  endif
+  if t <= 0
+    return '?'
+  endif
+  return strftime('%Y-%m-%d %H:%M:%S', t)
 endfunction
 
 function! HooliesUndotreeApply() abort
@@ -175,22 +204,32 @@ endfunction
 function! HooliesFilterPickerLines() abort
   let q = tolower(s:pick_query)
   let s:pick_items = []
-  for it in s:pick_all
-    let hay = tolower(it.label)
-    if has_key(it, 'path')
-      let hay .= ' ' . tolower(it.path)
-    endif
-    if q ==# '' || stridx(hay, q) >= 0
-      call add(s:pick_items, it)
-    endif
-  endfor
+  if s:pick_mode ==# 'filter'
+    for it in s:pick_all
+      let hay = tolower(it.label)
+      if has_key(it, 'path')
+        let hay .= ' ' . tolower(it.path)
+      endif
+      if q ==# '' || stridx(hay, q) >= 0
+        call add(s:pick_items, it)
+      endif
+    endfor
+  else
+    let s:pick_items = copy(s:pick_all)
+  endif
   if s:pick_idx >= len(s:pick_items)
     let s:pick_idx = max([0, len(s:pick_items) - 1])
   endif
   let lines = ['> ' . s:pick_query . '▌']
   call add(lines, repeat('─', 56))
   if empty(s:pick_items)
-    call add(lines, '  (no matches)')
+    if s:pick_mode ==# 'grep' && strchars(s:pick_query) < 2
+      call add(lines, '  (type 2+ characters to search)')
+    elseif s:pick_mode ==# 'help' && s:pick_query ==# ''
+      call add(lines, '  (type a help topic)')
+    else
+      call add(lines, '  (no matches)')
+    endif
   else
     let last = len(s:pick_items) - 1
     let maxn = 16
@@ -216,7 +255,12 @@ function! HooliesFilterPickerLines() abort
     endif
   endif
   call add(lines, '')
-  call add(lines, ' type to filter  ·  C-p/C-n  ·  Enter open  ·  Esc close')
+  if s:pick_mode ==# 'grep'
+    let kind = s:pick_grep_regex ? 'regex' : 'literal'
+    call add(lines, ' C-r ' . kind . '  ·  C-p/C-n  ·  Enter open + quickfix  ·  Esc')
+  else
+    call add(lines, ' type to filter  ·  C-p/C-n  ·  Enter open  ·  Esc close')
+  endif
   return lines
 endfunction
 
@@ -241,7 +285,25 @@ function! HooliesFilterPickerAccept() abort
     if item.id > 0 && bufexists(item.id)
       execute 'buffer' item.id
     endif
-  elseif item.path !=# ''
+  elseif item.kind ==# 'help'
+    if get(item, 'tag', '') !=# ''
+      try
+        execute 'help' item.tag
+      catch /^Vim\%((\a\+)\)\=:E/
+        echo 'No help for ' . item.tag
+      endtry
+    endif
+  elseif item.kind ==# 'grep'
+    if get(item, 'path', '') ==# ''
+      return
+    endif
+    call HooliesGrepToQuickfix()
+    execute 'edit' fnameescape(item.path)
+    if get(item, 'lnum', 0) > 0
+      execute item.lnum
+      normal! zvzz
+    endif
+  elseif get(item, 'path', '') !=# ''
     execute 'edit' fnameescape(item.path)
   endif
 endfunction
@@ -269,6 +331,16 @@ function! HooliesFilterPickerFilter(id, key) abort
     call HooliesFilterPickerAccept()
     return 1
   endif
+  if a:key ==# "\<C-r>" && s:pick_mode ==# 'grep'
+    let s:pick_grep_regex = !s:pick_grep_regex
+    let s:pick_title = s:pick_grep_regex ? ' Grep regex ' : ' Grep literal '
+    if s:pick_id >= 0 && exists('*popup_setoptions')
+      call popup_setoptions(s:pick_id, {'title': s:pick_title})
+    endif
+    let s:pick_idx = 0
+    call HooliesFilterPickerQueryChanged()
+    return 1
+  endif
   if a:key ==# "\<Up>" || a:key ==# "\<C-p>"
     call HooliesFilterPickerMove(-1)
     call HooliesFilterPickerRefresh()
@@ -283,23 +355,35 @@ function! HooliesFilterPickerFilter(id, key) abort
     if s:pick_query !=# ''
       let s:pick_query = strcharpart(s:pick_query, 0, strchars(s:pick_query) - 1)
       let s:pick_idx = 0
-      call HooliesFilterPickerRefresh()
+      call HooliesFilterPickerQueryChanged()
     endif
     return 1
   endif
   if a:key ==# "\<C-u>"
     let s:pick_query = ''
     let s:pick_idx = 0
-    call HooliesFilterPickerRefresh()
+    call HooliesFilterPickerQueryChanged()
     return 1
   endif
   if strchars(a:key) == 1 && char2nr(a:key) >= 32
     let s:pick_query .= a:key
     let s:pick_idx = 0
-    call HooliesFilterPickerRefresh()
+    call HooliesFilterPickerQueryChanged()
     return 1
   endif
   return 1
+endfunction
+
+function! HooliesFilterPickerQueryChanged() abort
+  if s:pick_mode ==# 'grep'
+    call HooliesFilterPickerRefresh()
+    call HooliesGrepPickerSchedule()
+  elseif s:pick_mode ==# 'help'
+    call HooliesHelpPickerSearch()
+    call HooliesFilterPickerRefresh()
+  else
+    call HooliesFilterPickerRefresh()
+  endif
 endfunction
 
 function! HooliesFilterPickerSplit() abort
@@ -322,6 +406,7 @@ function! HooliesFilterPickerSplit() abort
 endfunction
 
 function! HooliesFilterPicker(title, items) abort
+  let s:pick_mode = 'filter'
   if empty(a:items)
     echohl WarningMsg | echo a:title . ': (empty)' | echohl None
     return
@@ -412,12 +497,196 @@ function! HooliesFindConfigFiles() abort
   call HooliesPickPaths('Config', out)
 endfunction
 
+function! HooliesGrepToQuickfix() abort
+  let qf = []
+  for it in s:pick_all
+    if get(it, 'kind', '') !=# 'grep' || get(it, 'path', '') ==# ''
+      continue
+    endif
+    call add(qf, {
+          \ 'filename': it.path,
+          \ 'lnum': get(it, 'lnum', 1),
+          \ 'col': get(it, 'col', 1),
+          \ 'text': get(it, 'text', it.label),
+          \ })
+  endfor
+  if empty(qf)
+    return
+  endif
+  call setqflist(qf, 'r')
+  call setqflist([], 'a', {'title': (s:pick_grep_regex ? 'Grep ' : 'Grep -F ') . s:pick_query})
+endfunction
+
+function! HooliesLivePickerOpen(title, mode, query) abort
+  let s:pick_mode = a:mode
+  if a:mode ==# 'grep'
+    let s:pick_grep_regex = 0
+    let s:pick_title = ' Grep literal '
+  else
+    let s:pick_title = ' ' . a:title . ' '
+  endif
+  let s:pick_all = []
+  let s:pick_items = []
+  let s:pick_query = a:query
+  let s:pick_idx = 0
+  if !exists('*popup_create')
+    if a:mode ==# 'grep'
+      if a:query ==# ''
+        call inputsave()
+        let pat = input('Project grep pattern: ')
+        call inputrestore()
+        if pat ==# '' | return | endif
+        call HooliesGrepFill(pat)
+      else
+        call HooliesGrepFill(a:query)
+      endif
+    elseif a:mode ==# 'help'
+      call feedkeys(':help ' . a:query, 'n')
+    endif
+    return
+  endif
+  let width = min([78, &columns - 6])
+  try
+    let s:pick_id = popup_create(HooliesFilterPickerLines(), {
+          \ 'title': s:pick_title,
+          \ 'pos': 'center',
+          \ 'minwidth': width,
+          \ 'maxwidth': width,
+          \ 'maxheight': 22,
+          \ 'border': [],
+          \ 'padding': [0, 1, 0, 1],
+          \ 'highlight': 'Pmenu',
+          \ 'borderhighlight': ['Function'],
+          \ 'filter': 'HooliesFilterPickerFilter',
+          \ 'mapping': 0,
+          \ 'wrap': 0,
+          \ 'zindex': 310,
+          \ })
+  catch
+    let s:pick_id = -1
+    return
+  endtry
+  call HooliesFilterPickerQueryChanged()
+endfunction
+
+function! HooliesGrepPickerSchedule() abort
+  if has('timers')
+    if s:pick_grep_timer != -1
+      call timer_stop(s:pick_grep_timer)
+    endif
+    let s:pick_grep_timer = timer_start(160, function('HooliesGrepPickerTick'))
+  else
+    call HooliesGrepPickerSearch()
+  endif
+endfunction
+
+function! HooliesGrepPickerTick(timer) abort
+  let s:pick_grep_timer = -1
+  call HooliesGrepPickerSearch()
+  call HooliesFilterPickerRefresh()
+endfunction
+
+function! HooliesGrepPickerSearch() abort
+  let s:pick_all = []
+  let q = s:pick_query
+  if strchars(q) < 2
+    return
+  endif
+  let root = HooliesGitRoot()
+  let lines = []
+  if executable('rg')
+    let flags = s:pick_grep_regex ? '' : '-F '
+    let cmd = 'rg --vimgrep --max-count 4 --max-filesize 1M ' . flags . '-- ' . shellescape(q)
+    if root !=# ''
+      let cmd .= ' ' . shellescape(root)
+    endif
+    let lines = systemlist(cmd)
+    if v:shell_error >= 2
+      call add(s:pick_all, {'kind': 'grep', 'path': '', 'lnum': 0, 'text': '', 'label': 'rg: invalid pattern or failed'})
+      return
+    endif
+  else
+    let save_cwd = getcwd()
+    try
+      if root !=# ''
+        execute 'lcd' fnameescape(root)
+      endif
+      if s:pick_grep_regex
+        let pat = escape(q, '/')
+      else
+        let pat = '\V' . escape(q, '/\')
+      endif
+      silent! execute 'vimgrep /' . pat . '/gj **/*'
+    catch
+    finally
+      execute 'lcd' fnameescape(save_cwd)
+    endtry
+    for e in getqflist()
+      if !has_key(e, 'bufnr') || e.bufnr <= 0
+        continue
+      endif
+      let path = fnamemodify(bufname(e.bufnr), ':p')
+      let text = get(e, 'text', '')
+      let lnum = get(e, 'lnum', 0)
+      call add(s:pick_all, {
+            \ 'kind': 'grep',
+            \ 'path': path,
+            \ 'lnum': lnum,
+            \ 'col': get(e, 'col', 1),
+            \ 'text': text,
+            \ 'label': fnamemodify(path, ':~') . ':' . lnum . '  ' . text,
+            \ })
+      if len(s:pick_all) >= 80
+        break
+      endif
+    endfor
+    return
+  endif
+  let n = 0
+  for line in lines
+    let m = matchlist(line, '^\(.\{-}\):\(\d\+\):\(\d\+\):\(.*\)$')
+    if empty(m)
+      continue
+    endif
+    let path = m[1]
+    let lnum = str2nr(m[2])
+    let col = str2nr(m[3])
+    let text = m[4]
+    call add(s:pick_all, {
+          \ 'kind': 'grep',
+          \ 'path': path,
+          \ 'lnum': lnum,
+          \ 'col': col,
+          \ 'text': text,
+          \ 'label': fnamemodify(path, ':~') . ':' . lnum . '  ' . text,
+          \ })
+    let n += 1
+    if n >= 80
+      break
+    endif
+  endfor
+endfunction
+
+function! HooliesHelpPickerSearch() abort
+  let s:pick_all = []
+  let q = s:pick_query
+  if q ==# ''
+    return
+  endif
+  for t in getcompletion(q, 'help')
+    call add(s:pick_all, {'kind': 'help', 'tag': t, 'label': t})
+    if len(s:pick_all) >= 60
+      break
+    endif
+  endfor
+endfunction
+
 function! HooliesGrepInteractive() abort
-  call inputsave()
-  let pat = input('Project grep pattern: ')
-  call inputrestore()
-  if pat ==# '' | return | endif
-  call HooliesGrepFill(pat)
+  call HooliesLivePickerOpen('Grep', 'grep', '')
+endfunction
+
+function! HooliesHelpPick() abort
+  call HooliesLivePickerOpen('Help', 'help', '')
 endfunction
 
 function! HooliesGitRoot() abort
@@ -438,7 +707,7 @@ endfunction
 function! HooliesGrepFill(pat) abort
   let root = HooliesGitRoot()
   if executable('rg')
-    let cmd = 'rg --vimgrep -- ' . shellescape(a:pat)
+    let cmd = 'rg --vimgrep -F -- ' . shellescape(a:pat)
     if root !=# ''
       let cmd .= ' ' . shellescape(root)
     endif
@@ -460,7 +729,7 @@ function! HooliesGrepFill(pat) abort
       if root !=# ''
         execute 'lcd' fnameescape(root)
       endif
-      silent exe 'vimgrep /' . escape(a:pat, '/') . '/gj **/*'
+      silent exe 'vimgrep /\V' . escape(a:pat, '/\') . '/gj **/*'
     catch /^Vim\%((\a\+)\)\=:E/
       echohl WarningMsg | echo 'vimgrep failed (install ripgrep for best results)' | echohl None
       return
@@ -474,7 +743,7 @@ endfunction
 function! HooliesGrepCursorWord() abort
   let w = expand('<cword>')
   if w ==# '' | return | endif
-  call HooliesGrepFill(w)
+  call HooliesLivePickerOpen('Grep', 'grep', w)
 endfunction
 
 function! HooliesGrepOpenBuffers(pat) abort
@@ -545,51 +814,514 @@ function! HooliesFormatBang(cmd) abort
   endif
 endfunction
 
-function! HooliesFormatBuffer() abort
+function! HooliesFormatExtCmd() abort
   let ft = &filetype
-  let view = winsaveview()
   if ft ==# 'lua' && executable('stylua')
-    call HooliesFormatBang('stylua -')
-  elseif ft ==# 'python' && executable('ruff')
-    call HooliesFormatBang('ruff format -')
-  elseif ft ==# 'python' && executable('black')
-    call HooliesFormatBang('black -q -')
-  elseif ft ==# 'go' && executable('goimports')
-    call HooliesFormatBang('goimports')
-  elseif ft ==# 'go' && executable('gofmt')
-    call HooliesFormatBang('gofmt')
-  elseif (ft ==# 'html' || ft ==# 'json' || ft ==# 'yaml' || ft ==# 'javascript' || ft ==# 'javascriptreact' || ft ==# 'typescript' || ft ==# 'typescriptreact' || ft ==# 'css') && executable('prettier')
-    call HooliesFormatBang('prettier --stdin-filepath ' . shellescape(expand('%:p')))
-  elseif (ft ==# 'sh' || ft ==# 'bash' || ft ==# 'zsh') && executable('shfmt')
-    call HooliesFormatBang('shfmt -i 4 -ci')
-  elseif ft ==# 'elixir' && executable('mix')
-    call HooliesFormatBang('mix format -')
+    return 'stylua -'
+  endif
+  if ft ==# 'python' && executable('ruff')
+    return 'ruff format -'
+  endif
+  if ft ==# 'python' && executable('black')
+    return 'black -q -'
+  endif
+  if ft ==# 'go' && executable('goimports')
+    return 'goimports'
+  endif
+  if ft ==# 'go' && executable('gofmt')
+    return 'gofmt'
+  endif
+  if (ft ==# 'sh' || ft ==# 'bash' || ft ==# 'zsh') && executable('shfmt')
+    return 'shfmt -i 4 -ci'
+  endif
+  if ft ==# 'elixir' && executable('mix')
+    return 'mix format -'
+  endif
+  return ''
+endfunction
+
+function! HooliesFormatKind() abort
+  let ft = &filetype
+  if ft ==# 'json' || ft ==# 'jsonc'
+    return 'json'
+  endif
+  if ft ==# 'yaml' || ft ==# 'yml'
+    return 'yaml'
+  endif
+  if ft ==# 'toml'
+    return 'toml'
+  endif
+  if ft ==# 'css' || ft ==# 'scss' || ft ==# 'less'
+    return 'css'
+  endif
+  if ft ==# 'html' || ft ==# 'htmldjango'
+    return 'html'
+  endif
+  if ft ==# 'xml' || ft ==# 'xsd' || ft ==# 'xslt' || ft ==# 'svg'
+    return 'xml'
+  endif
+  return ''
+endfunction
+
+function! HooliesReplaceBuffer(text) abort
+  let lines = split(a:text, "\n", 1)
+  if !empty(lines) && lines[-1] ==# ''
+    call remove(lines, -1)
+  endif
+  silent! keepjumps %delete _
+  if empty(lines)
+    call setline(1, '')
+  else
+    call setline(1, lines)
+  endif
+endfunction
+
+function! HooliesJsonFromVim(val, level) abort
+  let t = type(a:val)
+  let pad = repeat('    ', a:level)
+  let inn = repeat('    ', a:level + 1)
+  if exists('v:null') && (a:val is# v:null || a:val is# v:none)
+    return 'null'
+  endif
+  if exists('v:true') && a:val is# v:true
+    return 'true'
+  endif
+  if exists('v:false') && a:val is# v:false
+    return 'false'
+  endif
+  if t == type([])
+    if empty(a:val)
+      return '[]'
+    endif
+    let parts = []
+    for item in a:val
+      call add(parts, inn . HooliesJsonFromVim(item, a:level + 1))
+    endfor
+    return "[\n" . join(parts, ",\n") . "\n" . pad . ']'
+  endif
+  if t == type({})
+    if empty(a:val)
+      return '{}'
+    endif
+    let parts = []
+    for k in sort(keys(a:val))
+      let key = exists('*json_encode') ? json_encode(k) : '"' . substitute(k, '"', '\\"', 'g') . '"'
+      call add(parts, inn . key . ': ' . HooliesJsonFromVim(a:val[k], a:level + 1))
+    endfor
+    return "{\n" . join(parts, ",\n") . "\n" . pad . '}'
+  endif
+  if exists('*json_encode') && (t == type('') || t == type(0) || t == type(0.0))
+    return json_encode(a:val)
+  endif
+  if t == type('')
+    return '"' . substitute(substitute(a:val, '\\', '\\\\', 'g'), '"', '\\"', 'g') . '"'
+  endif
+  return string(a:val)
+endfunction
+
+function! HooliesJsonPrettyScan(src) abort
+  let out = ''
+  let indent = 0
+  let i = 0
+  let n = strlen(a:src)
+  let in_str = 0
+  let esc = 0
+  while i < n
+    let c = strpart(a:src, i, 1)
+    if in_str
+      let out .= c
+      if esc
+        let esc = 0
+      elseif c ==# '\'
+        let esc = 1
+      elseif c ==# '"'
+        let in_str = 0
+      endif
+      let i += 1
+      continue
+    endif
+    if c ==# '"'
+      let in_str = 1
+      let out .= c
+    elseif c ==# '{' || c ==# '['
+      let indent += 1
+      let out .= c . "\n" . repeat('    ', indent)
+    elseif c ==# '}' || c ==# ']'
+      let indent = indent - 1
+      if indent < 0
+        throw 'invalid json'
+      endif
+      let out .= "\n" . repeat('    ', indent) . c
+    elseif c ==# ','
+      let out .= c . "\n" . repeat('    ', indent)
+    elseif c ==# ':'
+      let out .= ': '
+    elseif c =~# '\s'
+    else
+      let out .= c
+    endif
+    let i += 1
+  endwhile
+  if in_str || indent != 0
+    throw 'invalid json'
+  endif
+  return substitute(out, '\n\s*\n', '\n', 'g') . "\n"
+endfunction
+
+function! HooliesFmtJson(src) abort
+  let src = substitute(a:src, '^\_s*\|\_s*$', '', 'g')
+  if src ==# ''
+    return ''
+  endif
+  if exists('*json_decode')
+    let obj = json_decode(src)
+    return HooliesJsonFromVim(obj, 0) . "\n"
+  endif
+  return HooliesJsonPrettyScan(src)
+endfunction
+
+function! HooliesYamlScalar(val) abort
+  if exists('v:null') && (a:val is# v:null || a:val is# v:none)
+    return 'null'
+  endif
+  if exists('v:true') && a:val is# v:true
+    return 'true'
+  endif
+  if exists('v:false') && a:val is# v:false
+    return 'false'
+  endif
+  let t = type(a:val)
+  if t == type(0) || t == type(0.0)
+    return exists('*json_encode') ? json_encode(a:val) : string(a:val)
+  endif
+  let s = type(a:val) == type('') ? a:val : string(a:val)
+  if s ==# '' || s =~# '[:#\[\]{},&*!|>''"%@`]' || s =~# '^\s\|\s$' || s =~# '\n'
+    return exists('*json_encode') ? json_encode(s) : '"' . substitute(s, '"', '\\"', 'g') . '"'
+  endif
+  return s
+endfunction
+
+function! HooliesYamlFromVim(val, level) abort
+  let pad = repeat('  ', a:level)
+  let t = type(a:val)
+  if t == type({})
+    if empty(a:val)
+      return pad . '{}'
+    endif
+    let lines = []
+    for k in keys(a:val)
+      let v = a:val[k]
+      let key = k =~# '^[A-Za-z0-9_.-]\+$' ? k : HooliesYamlScalar(k)
+      if type(v) == type({}) || type(v) == type([])
+        if empty(v)
+          call add(lines, pad . key . ': ' . (type(v) == type([]) ? '[]' : '{}'))
+        else
+          call add(lines, pad . key . ':')
+          call add(lines, HooliesYamlFromVim(v, a:level + 1))
+        endif
+      else
+        call add(lines, pad . key . ': ' . HooliesYamlScalar(v))
+      endif
+    endfor
+    return join(lines, "\n")
+  endif
+  if t == type([])
+    if empty(a:val)
+      return pad . '[]'
+    endif
+    let lines = []
+    for item in a:val
+      if type(item) == type({}) || type(item) == type([])
+        if empty(item)
+          call add(lines, pad . '- ' . (type(item) == type([]) ? '[]' : '{}'))
+        else
+          let body = HooliesYamlFromVim(item, a:level + 1)
+          let blines = split(body, "\n")
+          if !empty(blines)
+            let blines[0] = pad . '- ' . substitute(blines[0], '^\s*', '', '')
+            let i = 1
+            while i < len(blines)
+              let blines[i] = '  ' . blines[i]
+              let i += 1
+            endwhile
+            call add(lines, join(blines, "\n"))
+          endif
+        endif
+      else
+        call add(lines, pad . '- ' . HooliesYamlScalar(item))
+      endif
+    endfor
+    return join(lines, "\n")
+  endif
+  return pad . HooliesYamlScalar(a:val)
+endfunction
+
+function! HooliesFmtYaml(src) abort
+  let src = substitute(a:src, '^\_s*\|\_s*$', '', 'g')
+  if src ==# ''
+    return ''
+  endif
+  if src =~# '^[\[{]' && exists('*json_decode')
+    return HooliesYamlFromVim(json_decode(src), 0) . "\n"
+  endif
+  let lines = []
+  for line in split(a:src, "\n", 0)
+    let line = substitute(line, '\s\+$', '', '')
+    if line =~# '^\s*#' || line =~# '^\s*$'
+      call add(lines, line)
+      continue
+    endif
+    let line = substitute(line, '^\(\s*[[:alnum:]_.-]\+\)\s*:\s*', '\1: ', '')
+    let line = substitute(line, '^\(\s*-\)\s\+', '\1 ', '')
+    call add(lines, line)
+  endfor
+  return join(lines, "\n") . "\n"
+endfunction
+
+function! HooliesFmtToml(src) abort
+  let lines = []
+  for line in split(a:src, "\n", 0)
+    let line = substitute(line, '\s\+$', '', '')
+    if line =~# '^\s*['
+      if !empty(lines) && lines[-1] !~# '^\s*$'
+        call add(lines, '')
+      endif
+      call add(lines, substitute(line, '\s\+', '', 'g'))
+      continue
+    endif
+    if line =~# '^\s*#' || line =~# '^\s*$'
+      call add(lines, line)
+      continue
+    endif
+    let line = substitute(line, '^\s*\([^=[:space:]]\+\)\s*=\s*', '\1 = ', '')
+    let line = substitute(line, ',\(\S\)', ', \1', 'g')
+    call add(lines, line)
+  endfor
+  return join(lines, "\n") . "\n"
+endfunction
+
+function! HooliesFmtCss(src) abort
+  let out = []
+  let buf = ''
+  let i = 0
+  let n = strlen(a:src)
+  let indent = 0
+  while i < n
+    let c = strpart(a:src, i, 1)
+    if c ==# '/' && i + 1 < n && strpart(a:src, i + 1, 1) ==# '*'
+      let j = stridx(a:src, '*/', i + 2)
+      let j = j < 0 ? n : j + 2
+      let tok = substitute(buf, '^\s\+\|\s\+$', '', 'g')
+      let buf = ''
+      if tok !=# ''
+        call add(out, repeat('    ', indent) . HooliesCssDecl(tok))
+      endif
+      for cl in split(strpart(a:src, i, j - i), "\n")
+        call add(out, repeat('    ', indent) . substitute(cl, '^\s\+\|\s\+$', '', 'g'))
+      endfor
+      let i = j
+      continue
+    endif
+    if c ==# '"' || c ==# "'"
+      let q = c
+      let buf .= c
+      let i += 1
+      while i < n
+        let ch = strpart(a:src, i, 1)
+        let buf .= ch
+        if ch ==# '\' && i + 1 < n
+          let buf .= strpart(a:src, i + 1, 1)
+          let i += 2
+          continue
+        endif
+        if ch ==# q
+          let i += 1
+          break
+        endif
+        let i += 1
+      endwhile
+      continue
+    endif
+    if c ==# '{'
+      let tok = substitute(buf, '^\s\+\|\s\+$', '', 'g')
+      let buf = ''
+      call add(out, repeat('    ', indent) . (tok ==# '' ? '{' : tok . ' {'))
+      let indent += 1
+      let i += 1
+      continue
+    endif
+    if c ==# '}'
+      let tok = substitute(buf, '^\s\+\|\s\+$', '', 'g')
+      let buf = ''
+      if tok !=# ''
+        call add(out, repeat('    ', indent) . HooliesCssDecl(tok))
+      endif
+      let indent = indent < 1 ? 0 : indent - 1
+      call add(out, repeat('    ', indent) . '}')
+      let i += 1
+      continue
+    endif
+    if c ==# ';'
+      let tok = substitute(buf, '^\s\+\|\s\+$', '', 'g')
+      let buf = ''
+      call add(out, repeat('    ', indent) . HooliesCssDecl(tok))
+      let i += 1
+      continue
+    endif
+    let buf .= c
+    let i += 1
+  endwhile
+  let tok = substitute(buf, '^\s\+\|\s\+$', '', 'g')
+  if tok !=# ''
+    call add(out, repeat('    ', indent) . (stridx(tok, ':') >= 0 ? HooliesCssDecl(tok) : tok))
+  endif
+  return substitute(join(out, "\n"), '\n\{3,}', '\n\n', 'g') . "\n"
+endfunction
+
+function! HooliesCssDecl(tok) abort
+  let tok = substitute(a:tok, '^\s\+\|\s\+$', '', 'g')
+  if tok ==# ''
+    return ';'
+  endif
+  if tok =~# ':'
+    let tok = substitute(tok, '\s*:\s*', ': ', '')
+  endif
+  if tok !~# ';$'
+    let tok .= ';'
+  endif
+  return tok
+endfunction
+
+function! HooliesMarkupNextToken(src) abort
+  let m = matchstr(a:src, '^<!--\_.\{-}-->')
+  if m !=# ''
+    return m
+  endif
+  let m = matchstr(a:src, '^<\(script\|style\|pre\|textarea\)\>[^>]*>\_.\{-}</\1>')
+  if m !=# ''
+    return m
+  endif
+  let m = matchstr(a:src, '^</\?[^>]\+>')
+  if m !=# ''
+    return m
+  endif
+  return matchstr(a:src, '^[^<]\+')
+endfunction
+
+function! HooliesFmtMarkup(src, html) abort
+  let void = {
+        \ 'area': 1, 'base': 1, 'br': 1, 'col': 1, 'embed': 1, 'hr': 1,
+        \ 'img': 1, 'input': 1, 'link': 1, 'meta': 1, 'param': 1,
+        \ 'source': 1, 'track': 1, 'wbr': 1,
+        \ }
+  let rest = a:src
+  let indent = 0
+  let out = []
+  while rest !=# ''
+    let tok = HooliesMarkupNextToken(rest)
+    if tok ==# ''
+      break
+    endif
+    let rest = strpart(rest, strlen(tok))
+    let s = substitute(tok, '^\_s*\|\_s*$', '', 'g')
+    if s ==# ''
+      continue
+    endif
+    if s =~# '^<!--' || s =~? '^<\(script\|style\|pre\|textarea\)\>'
+      call add(out, repeat('    ', indent) . s)
+      continue
+    endif
+    if s =~# '^</'
+      let indent = indent < 1 ? 0 : indent - 1
+      call add(out, repeat('    ', indent) . s)
+      continue
+    endif
+    if s =~# '^<'
+      let nm = tolower(matchstr(s, '^</\=\zs\w\+'))
+      call add(out, repeat('    ', indent) . s)
+      if nm !=# '' && s !~# '/>$' && s !~# '^<!' && !(a:html && has_key(void, nm))
+        let indent += 1
+      endif
+      continue
+    endif
+    for line in split(s, "\n")
+      let line = substitute(line, '^\s\+\|\s\+$', '', 'g')
+      if line !=# ''
+        call add(out, repeat('    ', indent) . line)
+      endif
+    endfor
+  endwhile
+  return join(out, "\n") . "\n"
+endfunction
+
+function! HooliesFormatVim(kind) abort
+  let src = join(getline(1, '$'), "\n")
+  try
+    if a:kind ==# 'json'
+      let out = HooliesFmtJson(src)
+    elseif a:kind ==# 'yaml'
+      let out = HooliesFmtYaml(src)
+    elseif a:kind ==# 'toml'
+      let out = HooliesFmtToml(src)
+    elseif a:kind ==# 'css'
+      let out = HooliesFmtCss(src)
+    elseif a:kind ==# 'html'
+      let out = HooliesFmtMarkup(src, 1)
+    elseif a:kind ==# 'xml'
+      let out = HooliesFmtMarkup(src, 0)
+    else
+      throw 'unknown kind'
+    endif
+  catch
+    echohl ErrorMsg
+    echo 'Formatter failed: ' . v:exception
+    echohl None
+    return
+  endtry
+  call HooliesReplaceBuffer(out)
+endfunction
+
+function! HooliesFormatBuffer() abort
+  let view = winsaveview()
+  let ext = HooliesFormatExtCmd()
+  let kind = HooliesFormatKind()
+  if ext !=# ''
+    call HooliesFormatBang(ext)
+  elseif kind !=# ''
+    call HooliesFormatVim(kind)
   else
     echohl WarningMsg
-    echo 'No formatter for filetype: ' . (ft ==# '' ? '(none)' : ft)
+    echo 'No formatter for filetype: ' . (&filetype ==# '' ? '(none)' : &filetype)
     echohl None
   endif
   call winrestview(view)
 endfunction
 
 function! HooliesHasFormatter() abort
-  let ft = &filetype
-  if ft ==# 'lua' && executable('stylua') | return 1 | endif
-  if ft ==# 'python' && (executable('ruff') || executable('black')) | return 1 | endif
-  if ft ==# 'go' && (executable('goimports') || executable('gofmt')) | return 1 | endif
-  if (ft ==# 'html' || ft ==# 'json' || ft ==# 'yaml' || ft ==# 'javascript' || ft ==# 'javascriptreact' || ft ==# 'typescript' || ft ==# 'typescriptreact' || ft ==# 'css') && executable('prettier') | return 1 | endif
-  if (ft ==# 'sh' || ft ==# 'bash' || ft ==# 'zsh') && executable('shfmt') | return 1 | endif
-  if ft ==# 'elixir' && executable('mix') | return 1 | endif
+  return HooliesFormatExtCmd() !=# '' || HooliesFormatKind() !=# ''
+endfunction
+
+function! HooliesFileIsHuge() abort
+  if line('$') > 20000
+    return 1
+  endif
+  let path = expand('%:p')
+  if path !=# '' && getfsize(path) > 1024 * 1024
+    return 1
+  endif
   return 0
 endfunction
 
 function! HooliesFormatWritePre() abort
   if !get(g:, 'hoolies_format_on_write', 1) | return | endif
-  if &modifiable == 0 || &bin || !HooliesHasFormatter() | return | endif
+  if &modifiable == 0 || &bin || HooliesFileIsHuge() || !HooliesHasFormatter() | return | endif
   call HooliesFormatBuffer()
 endfunction
 
 function! HooliesBufWritePre() abort
+  if HooliesFileIsHuge()
+    return
+  endif
   if &modifiable && &filetype !~# '^\(markdown\|diff\|gitcommit\)$'
     keeppatterns %s/\s\+$//e
   endif
@@ -625,8 +1357,78 @@ function! HooliesStatusGit() abort
   return s:git_branch ==# '' ? '' : ' ' . s:git_branch
 endfunction
 
+function! HooliesStatusFlags() abort
+  let out = ''
+  if exists('*reg_recording')
+    let r = reg_recording()
+    if r !=# ''
+      let out .= ' @' . r
+    endif
+  endif
+  if &paste
+    let out .= ' PASTE'
+  endif
+  if &spell
+    let out .= ' SPELL'
+  endif
+  if &readonly || !&modifiable
+    let out .= ' RO'
+  endif
+  return out
+endfunction
+
+function! HooliesHugeFileMode() abort
+  if &buftype !=# '' || &filetype ==# 'hoolies_dashboard'
+    return
+  endif
+  if !HooliesFileIsHuge()
+    return
+  endif
+  if get(b:, 'hoolies_huge', 0)
+    return
+  endif
+  let b:hoolies_huge = 1
+  setlocal norelativenumber nocursorcolumn nolist
+  setlocal synmaxcol=120
+  setlocal syntax=OFF
+endfunction
+
+function! HooliesSessionPath() abort
+  return expand('~/.vim/session.vim')
+endfunction
+
+function! HooliesSessionSave() abort
+  silent! call mkdir(expand('~/.vim'), 'p', 0700)
+  execute 'mksession!' fnameescape(HooliesSessionPath())
+  echo 'Session saved'
+endfunction
+
+function! HooliesSessionLoad() abort
+  let p = HooliesSessionPath()
+  if !filereadable(p)
+    echo 'No session'
+    return
+  endif
+  let g:hoolies_skip_dashboard = 1
+  if &filetype ==# 'hoolies_dashboard'
+    call HooliesDashboardClose()
+  endif
+  execute 'source' fnameescape(p)
+endfunction
+
+function! HooliesStartedWithSession() abort
+  if get(g:, 'hoolies_skip_dashboard', 0)
+    return 1
+  endif
+  if exists('v:argv')
+    return index(v:argv, '-S') >= 0
+  endif
+  return 0
+endfunction
+
 function! HooliesBufEnter() abort
   call HooliesGitBranchRefresh()
+  call HooliesHugeFileMode()
   if &buftype ==# 'terminal'
     startinsert
   elseif &modifiable
@@ -739,7 +1541,7 @@ function! HooliesTablineClick(minwid, nclicks, button, mods) abort
 endfunction
 
 function! HooliesStatusLine() abort
-  return '%<%f %h%w%m%r%{HooliesStatusGit()}%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
+  return '%<%f %h%w%m%{HooliesStatusFlags()}%{HooliesStatusGit()}%=%y %{&ff} %{strlen(&fenc)?&fenc:&enc} %l,%c/%L %P'
 endfunction
 
 function! HooliesSeedViminfo() abort
@@ -812,6 +1614,9 @@ function! HooliesFlashYank() abort
 endfunction
 
 function! HooliesVimEnterNoArgs() abort
+  if HooliesStartedWithSession()
+    return
+  endif
   if argc() == 0
     call HooliesDashboard()
   elseif argc() == 1 && isdirectory(argv(0))
@@ -909,7 +1714,7 @@ endfunction
 
 function! HooliesDashboardFind() abort
   call HooliesDashboardClose()
-  call feedkeys(':find ', 'n')
+  call HooliesProjectFiles()
 endfunction
 
 function! HooliesDashboardNew() abort
@@ -1020,6 +1825,138 @@ function! HooliesGitFiles() abort
   call HooliesPickPaths('Git files', files)
 endfunction
 
+function! HooliesProjectFiles() abort
+  let root = HooliesGitRoot()
+  let files = []
+  if root !=# '' && executable('git')
+    let files = systemlist('git -C ' . shellescape(root) . ' ls-files -co --exclude-standard')
+    if v:shell_error
+      let files = []
+    else
+      call map(files, {_, p -> root . '/' . p})
+    endif
+  endif
+  if empty(files) && executable('rg')
+    let dir = root !=# '' ? root : getcwd()
+    let files = systemlist('rg --files --sort path -- ' . shellescape(dir))
+  endif
+  if empty(files)
+    let dir = root !=# '' ? root : getcwd()
+    let files = glob(dir . '/**/*', 0, 1)
+    call filter(files, {_, p -> filereadable(p) && !isdirectory(p)})
+  endif
+  call filter(files, {_, p -> p !=# '' && filereadable(p)})
+  call HooliesPickPaths('Files', files)
+endfunction
+
+function! HooliesBufferDeleteClose() abort
+  let close_win = winnr('$') > 1
+  bdelete
+  if close_win && winnr('$') > 1
+    close
+  endif
+endfunction
+
+function! HooliesRestoreCursor() abort
+  let name = expand('%:t')
+  if name =~# '^\(COMMIT_EDITMSG\|MERGE_MSG\|REBASE_EDITMSG\|git-rebase-todo\)$'
+    return
+  endif
+  if &filetype =~# '^\(gitcommit\|gitrebase\|xxd\)$'
+    return
+  endif
+  if line("'\"") >= 1 && line("'\"") <= line('$')
+    execute 'normal! g`"'
+  endif
+endfunction
+
+function! HooliesCommentString() abort
+  let cs = &commentstring
+  if cs ==# '' || stridx(cs, '%s') < 0
+    let by_ft = {
+          \ 'vim': '" %s',
+          \ 'python': '# %s',
+          \ 'sh': '# %s',
+          \ 'bash': '# %s',
+          \ 'zsh': '# %s',
+          \ 'lua': '-- %s',
+          \ 'javascript': '// %s',
+          \ 'javascriptreact': '// %s',
+          \ 'typescript': '// %s',
+          \ 'typescriptreact': '// %s',
+          \ 'c': '// %s',
+          \ 'cpp': '// %s',
+          \ 'go': '// %s',
+          \ 'rust': '// %s',
+          \ }
+    let cs = get(by_ft, &filetype, '# %s')
+  endif
+  return cs
+endfunction
+
+function! HooliesCommentParts() abort
+  let cs = HooliesCommentString()
+  let idx = stridx(cs, '%s')
+  return [strpart(cs, 0, idx), strpart(cs, idx + 2)]
+endfunction
+
+function! HooliesCommentIsOn(line, left, right) abort
+  let indent = matchstr(a:line, '^\s*')
+  let rest = a:line[strlen(indent):]
+  if stridx(rest, a:left) != 0
+    return 0
+  endif
+  if a:right ==# ''
+    return 1
+  endif
+  return rest =~# '\V' . escape(a:right, '\') . '\s\*\$'
+endfunction
+
+function! HooliesCommentApply(line, left, right) abort
+  let indent = matchstr(a:line, '^\s*')
+  return indent . a:left . a:line[strlen(indent):] . a:right
+endfunction
+
+function! HooliesCommentStrip(line, left, right) abort
+  let indent = matchstr(a:line, '^\s*')
+  let rest = a:line[strlen(indent):]
+  if stridx(rest, a:left) == 0
+    let rest = strpart(rest, strlen(a:left))
+  endif
+  if a:right !=# ''
+    let rest = substitute(rest, '\V' . escape(a:right, '\') . '\s\*\$', '', '')
+  endif
+  return indent . rest
+endfunction
+
+function! HooliesCommentToggleLines(l1, l2) abort
+  let [left, right] = HooliesCommentParts()
+  let uncomment = 0
+  for lnum in range(a:l1, a:l2)
+    let line = getline(lnum)
+    if line =~# '^\s*$'
+      continue
+    endif
+    let uncomment = HooliesCommentIsOn(line, left, right)
+    break
+  endfor
+  for lnum in range(a:l1, a:l2)
+    let line = getline(lnum)
+    if line =~# '^\s*$'
+      continue
+    endif
+    if uncomment
+      call setline(lnum, HooliesCommentStrip(line, left, right))
+    else
+      call setline(lnum, HooliesCommentApply(line, left, right))
+    endif
+  endfor
+endfunction
+
+function! HooliesCommentOp(type) abort
+  call HooliesCommentToggleLines(line("'["), line("']"))
+endfunction
+
 function! HooliesExploreToggle() abort
   let i = 1
   while i <= winnr('$')
@@ -1079,6 +2016,9 @@ function! HooliesPairShouldOpen(open) abort
     return 0
   endif
   if a:open ==# "'" && &filetype =~# '^\(rust\|lisp\|scheme\|clojure\)$'
+    return 0
+  endif
+  if a:open ==# '"' && &filetype =~# '^\(vim\|help\|gitcommit\)$'
     return 0
   endif
   let nxt = HooliesPairNext()
@@ -1171,6 +2111,9 @@ function! HooliesAutoComplete() abort
   if !&modifiable || &readonly || &buftype !=# ''
     return
   endif
+  if get(b:, 'hoolies_huge', 0) || HooliesFileIsHuge()
+    return
+  endif
   if HooliesInCommentOrString()
     return
   endif
@@ -1232,7 +2175,7 @@ function! HooliesMapsLines() abort
         \ '',
         \ 'Files',
         \ '  <Space>e      toggle file explorer',
-        \ '  <Space>ff     find file (:find)',
+        \ '  <Space>ff     project files (type to filter)',
         \ '  <Space>fo     recent files (type to filter)',
         \ '  <Space>flg    git-tracked files (type to filter)',
         \ '  <Space>sn     nvim/vim config files (type to filter)',
@@ -1241,22 +2184,27 @@ function! HooliesMapsLines() abort
         \ '  <Space>fb     pick buffer (type to filter)',
         \ '  <Space>bb     new empty buffer',
         \ '  <Space>bd     delete buffer',
-        \ '  <Space>bD     delete buffer and quit',
+        \ '  <Space>bD     delete buffer (close window if split)',
         \ '  <Space>bw     wipe buffer',
         \ '  S-h / S-l     previous / next buffer',
         \ '  click tab     switch to that buffer',
         \ '  Alt-Esc       close other file buffers',
         \ '',
         \ 'Search',
-        \ '  <Space>flf    project grep',
+        \ '  <Space>flf    project grep (literal; C-r regex)',
         \ '  <Space>fs     grep word under cursor',
         \ '  <Space>ft     filter lines in this buffer',
         \ '  <Space>s/     grep open buffers',
         \ '  <Space>/      substitute word (or visual sel)',
-        \ '  <Space>fh     help',
+        \ '  <Space>fh     help (type to filter)',
+        \ '  <Space>qs     save session',
+        \ '  <Space>ql     load session',
+        \ '  ]q / [q       next / previous quickfix',
+        \ '  ]Q / [Q       last / first quickfix',
         \ '',
         \ 'Edit',
-        \ '  <Space>F      format buffer',
+        \ '  gcc / gc      toggle comment (line / motion or visual)',
+        \ '  <Space>F      format (html/css/xml/json/yaml/toml/…)',
         \ '  <Space>u      undo tree',
         \ '  <Space>CR     toggle terminal',
         \ '  <Space>?      this map list',
@@ -1281,7 +2229,7 @@ function! HooliesMapsLines() abort
         \ '  Esc Esc       hide terminal (job keeps running)',
         \ '  jj            leave insert mode',
         \ '  x / dd        delete without yanking',
-        \ '  Y (visual)    yank to clipboard',
+        \ '  Y             yank to end of line (visual: clipboard)',
         \ ]
 endfunction
 
@@ -1774,6 +2722,8 @@ set noshowmatch
 set splitright
 set splitbelow
 set diffopt+=vertical
+silent! set diffopt+=algorithm:patience
+silent! set diffopt+=linematch:60
 set noautochdir
 set iskeyword=@,48-57,192-255
 if has('gui_running')
@@ -1789,6 +2739,7 @@ if exists('+viminfofile')
   call HooliesSeedViminfo()
   set viminfofile=~/.vim/viminfo
 endif
+set viminfo='1000,<200,s100,h,:1000,/1000
 
 if HooliesClipboardTool()
   set clipboard=unnamedplus
@@ -1833,7 +2784,9 @@ let &listchars = 'tab:» ,trail:·,extends:»,precedes:«,nbsp:␣'
 
 set undodir=~/.vim/undodir
 set undofile
-set undolevels=1000
+set undolevels=10000
+set synmaxcol=300
+set sessionoptions=blank,buffers,curdir,folds,help,tabpages,winsize
 set directory=~/.vim/swap//
 
 set encoding=utf-8
@@ -1847,6 +2800,7 @@ set nrformats-=octal
 let g:hoolies_format_on_write = 1
 " Spell off in code/config: avoids red/pink on names like github, nvim, win_id2win
 set nospell
+set spelllang=en_us
 if has('termguicolors')
   if !has('gui_running')
     let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
@@ -1868,7 +2822,7 @@ let g:netrw_liststyle = 3
 let g:netrw_browse_split = 4
 let g:netrw_altv = 1
 let g:netrw_winsize = 25
-let g:netrw_keepdir = 0
+let g:netrw_keepdir = 1
 
 if executable('rg')
   set grepprg=rg\ --vimgrep\ --sort\ path
@@ -1926,7 +2880,6 @@ nnoremap <silent> <C-Left> :vertical resize -2<CR>
 nnoremap <silent> <C-Right> :vertical resize +2<CR>
 
 inoremap <C-k> <Up>
-inoremap <C-j> <Down>
 inoremap <silent> <expr> <C-h> HooliesPairLeftOrBS()
 inoremap <C-l> <Right>
 inoremap jj <Esc>
@@ -1941,7 +2894,7 @@ inoremap <silent> <A-j> <Esc>:move .+1<CR>==gi
 nnoremap <silent> <S-l> :bnext<CR>
 nnoremap <silent> <S-h> :bprevious<CR>
 nnoremap <silent> <leader>bd :bdelete<CR>
-nnoremap <silent> <leader>bD :bdelete<CR>:q!<CR>
+nnoremap <silent> <leader>bD :call HooliesBufferDeleteClose()<CR>
 nnoremap <silent> <leader>bw :bwipeout<CR>
 nnoremap <silent> <leader>bb :enew<CR>
 nnoremap <silent> <A-ESC> :call HooliesCloseOtherBuffers()<CR>
@@ -1953,7 +2906,7 @@ tnoremap <silent> <C-l> <C-\><C-n><C-w>l
 
 nnoremap <silent> <leader>u :call HooliesUndotreeToggle()<CR>
 
-nnoremap <silent> <Esc> :<C-u>nohlsearch<CR>:call HooliesEscAfterNoHl()<CR>
+nnoremap <silent> <expr> <Esc> HooliesEscExpr()
 
 nnoremap <silent> <Leader><CR> :call HooliesFloatingTermToggle()<CR>
 tnoremap <silent> <Esc> <C-\><C-n>
@@ -1993,8 +2946,18 @@ nnoremap x "_x
 xnoremap x "_x
 nnoremap dd "_dd
 
+nnoremap Y y$
 " Visual Y yanks the selection (not whole lines). "+Y then writes to the clipboard.
 xnoremap Y "+y
+
+nnoremap <silent> gcc :set opfunc=HooliesCommentOp<CR>g@_
+nnoremap <silent> gc :set opfunc=HooliesCommentOp<CR>g@
+xnoremap <silent> gc :<C-u>call HooliesCommentToggleLines(line("'<"), line("'>"))<CR>
+
+nnoremap <silent> ]q :cnext<CR>
+nnoremap <silent> [q :cprevious<CR>
+nnoremap <silent> ]Q :clast<CR>
+nnoremap <silent> [Q :cfirst<CR>
 
 xnoremap <silent> < <gv
 xnoremap <silent> > >gv
@@ -2005,10 +2968,12 @@ nnoremap <silent> <C-k> :call HooliesTmuxNavigate('k')<CR>
 nnoremap <silent> <C-l> :call HooliesTmuxNavigate('l')<CR>
 
 nnoremap <silent> <leader>fb :call HooliesBufferPicker()<CR>
-nnoremap <leader>ff :find 
+nnoremap <silent> <leader>ff :call HooliesProjectFiles()<CR>
 nnoremap <silent> <leader>flf :call HooliesGrepInteractive()<CR>
 nnoremap <silent> <leader>flg :call HooliesGitFiles()<CR>
-nnoremap <silent> <leader>fh :help 
+nnoremap <silent> <leader>fh :call HooliesHelpPick()<CR>
+nnoremap <silent> <leader>qs :call HooliesSessionSave()<CR>
+nnoremap <silent> <leader>ql :call HooliesSessionLoad()<CR> 
 nnoremap <silent> <leader>fo :call HooliesOldfilesPick()<CR>
 nnoremap <silent> <leader>fs :call HooliesGrepCursorWord()<CR>
 nnoremap <silent> <leader>ft :call HooliesCurrentBufferGrep()<CR>
@@ -2029,7 +2994,7 @@ augroup hoolies_vimrc
   autocmd!
   " Spell only where prose is expected (keeps .vimrc / code free of spell highlights)
   autocmd FileType hoolies_dashboard call HooliesDashboardHighlight()
-  autocmd FileType markdown,gitcommit,text,typst,rst setlocal spell
+  autocmd FileType markdown,gitcommit,text,typst,rst setlocal spell spelllang=en_us
   autocmd FileType * call HooliesSetOmnifunc()
   autocmd FileType netrw setlocal nonumber norelativenumber nolist
   autocmd FileType vim call HooliesVimFuncLinkFix()
@@ -2040,7 +3005,8 @@ augroup hoolies_vimrc
   endif
   autocmd BufWritePre * call HooliesBufWritePre()
   autocmd TextChangedI * call HooliesAutoCompleteSchedule()
-  autocmd BufReadPost * if line("'\"") >= 1 && line("'\"") <= line('$') | exe "normal! g`\"" | endif
+  autocmd BufReadPost * call HooliesRestoreCursor()
+  autocmd BufReadPost * call HooliesHugeFileMode()
   if exists('##TerminalOpen')
     autocmd TerminalOpen * call HooliesTermSetup()
   endif
