@@ -1,7 +1,4 @@
-" Vim configuration — plugin-free port of https://github.com/hoolies/nvim
-" For Vim (available everywhere). Neovim is a separate, unshared config.
 " Single-file: all logic and colors live here (no autoload/ or colors/ files).
-" Canonical path: ~/Projects/Bourne_Again/git_config/.config/.vimrc
 " ~/.vimrc is a symlink to that file.
 
 set nocompatible
@@ -41,6 +38,9 @@ let s:pick_title = ' Pick '
 let s:pick_mode = 'filter'
 let s:pick_grep_timer = -1
 let s:pick_grep_regex = 0
+let s:maps_query = ''
+let s:maps_searching = 0
+let s:maps_search_start = 1
 
 function! HooliesFloatingTermToggle() abort
   if !has('terminal')
@@ -2171,8 +2171,6 @@ endfunction
 
 function! HooliesMapsLines() abort
   return [
-        \ 'Leader is Space. Close with q or Esc.',
-        \ '',
         \ 'Files',
         \ '  <Space>e      toggle file explorer',
         \ '  <Space>ff     project files (type to filter)',
@@ -2487,12 +2485,122 @@ function! HooliesCmdPalette(...) abort
   endtry
 endfunction
 
+function! HooliesMapsSearchBegin() abort
+  let s:maps_search_start = line('.')
+  call clearmatches()
+endfunction
+
+function! HooliesMapsSearchClear() abort
+  call clearmatches()
+  call cursor(s:maps_search_start, 1)
+endfunction
+
+function! HooliesMapsSearchGo(dir) abort
+  call clearmatches()
+  if s:maps_query ==# ''
+    call cursor(s:maps_search_start, 1)
+    return
+  endif
+  let pat = '\c\V' . escape(s:maps_query, '\')
+  silent! call matchadd('Search', pat)
+  if a:dir == 0
+    call cursor(s:maps_search_start, 1)
+    if search(pat, 'cW') == 0
+      call search(pat, 'cw')
+    endif
+  elseif a:dir > 0
+    if search(pat, 'W') == 0
+      call search(pat, 'w')
+    endif
+  else
+    if search(pat, 'bW') == 0
+      call search(pat, 'bw')
+    endif
+  endif
+endfunction
+
+function! HooliesMapsPopupSetTitle(id) abort
+  if !exists('*popup_setoptions')
+    return
+  endif
+  let title = s:maps_searching ? ' /' . s:maps_query . ' ' : ' Maps '
+  call popup_setoptions(a:id, {'title': title})
+endfunction
+
+function! HooliesMapsPopupClosed(id, result) abort
+  let s:maps_query = ''
+  let s:maps_searching = 0
+endfunction
+
 function! HooliesMapsPopupFilter(id, key) abort
-  " Do not close on '?' or Space: those are the keys that open this popup
-  " (<leader>?), and Vim may still deliver them to the filter.
+  " Leftover '?' from <leader>? must not start a search or close.
+  if !s:maps_searching && a:key ==# '?'
+    return 1
+  endif
+  if s:maps_searching
+    if a:key ==# "\<Esc>"
+      let s:maps_searching = 0
+      let s:maps_query = ''
+      if exists('*win_execute')
+        call win_execute(a:id, 'call HooliesMapsSearchClear()')
+      endif
+      call HooliesMapsPopupSetTitle(a:id)
+      return 1
+    endif
+    if a:key ==# "\<CR>"
+      let s:maps_searching = 0
+      call HooliesMapsPopupSetTitle(a:id)
+      return 1
+    endif
+    if a:key ==# "\<BS>" || a:key ==# "\b" || a:key ==# "\<C-h>"
+      if s:maps_query !=# ''
+        let s:maps_query = strcharpart(s:maps_query, 0, strchars(s:maps_query) - 1)
+      endif
+      if exists('*win_execute')
+        call win_execute(a:id, 'call HooliesMapsSearchGo(0)')
+      endif
+      call HooliesMapsPopupSetTitle(a:id)
+      return 1
+    endif
+    if a:key ==# "\<C-u>"
+      let s:maps_query = ''
+      if exists('*win_execute')
+        call win_execute(a:id, 'call HooliesMapsSearchGo(0)')
+      endif
+      call HooliesMapsPopupSetTitle(a:id)
+      return 1
+    endif
+    if strchars(a:key) == 1 && char2nr(a:key) >= 32
+      let s:maps_query .= a:key
+      if exists('*win_execute')
+        call win_execute(a:id, 'call HooliesMapsSearchGo(0)')
+      endif
+      call HooliesMapsPopupSetTitle(a:id)
+    endif
+    return 1
+  endif
   if a:key ==# 'q' || a:key ==# "\<Esc>"
     call popup_close(a:id)
     return 1
+  endif
+  if !exists('*win_execute')
+    return 1
+  endif
+  if a:key ==# '/'
+    let s:maps_searching = 1
+    let s:maps_query = ''
+    call win_execute(a:id, 'call HooliesMapsSearchBegin()')
+    call HooliesMapsPopupSetTitle(a:id)
+  elseif a:key ==# 'n' && s:maps_query !=# ''
+    call win_execute(a:id, 'call HooliesMapsSearchGo(1)')
+  elseif a:key ==# 'N' && s:maps_query !=# ''
+    call win_execute(a:id, 'call HooliesMapsSearchGo(-1)')
+  elseif a:key ==# 'g'
+    call win_execute(a:id, 'normal! gg')
+  elseif a:key ==# 'G'
+    call win_execute(a:id, 'normal! G')
+  elseif exists('*popup_filter_menu') && (a:key ==# 'j' || a:key ==# 'k')
+    return popup_filter_menu(a:id, a:key)
   endif
   return 1
 endfunction
@@ -2504,9 +2612,12 @@ endfunction
 
 function! HooliesShowMaps() abort
   let lines = HooliesMapsLines()
+  let s:maps_query = ''
+  let s:maps_searching = 0
   if exists('*popup_create')
     try
-      call popup_create(lines, {
+      let maxh = min([28, &lines - 6])
+      let id = popup_create(lines, {
             \ 'title': ' Maps ',
             \ 'pos': 'center',
             \ 'padding': [1, 2, 1, 2],
@@ -2514,10 +2625,15 @@ function! HooliesShowMaps() abort
             \ 'highlight': 'Pmenu',
             \ 'borderhighlight': ['Function'],
             \ 'filter': 'HooliesMapsPopupFilter',
+            \ 'callback': 'HooliesMapsPopupClosed',
             \ 'mapping': 0,
             \ 'wrap': 0,
+            \ 'cursorline': 1,
+            \ 'firstline': 0,
             \ 'zindex': 300,
             \ 'minwidth': 48,
+            \ 'maxheight': maxh,
+            \ 'scrollbar': 1,
             \ })
       return
     catch
@@ -2570,6 +2686,7 @@ function! HooliesApplyColors() abort
     exe 'hi EndOfBuffer guibg=' . s:bg . ' guifg=' . s:bg
     hi Pmenu guibg=#292e42 guifg=#c0caf5
     hi PmenuSel guibg=#3e68d7 guifg=#ffffff gui=bold
+    hi! link PopupSelected PmenuSel
     silent! hi PmenuMatch guifg=#7aa2f7 guibg=#292e42 gui=bold
     silent! hi PmenuMatchSel guifg=#ffffff guibg=#3e68d7 gui=bold
     hi Visual guibg=#343b58
@@ -2684,6 +2801,7 @@ function! HooliesApplyColors() abort
     hi WildMenu ctermbg=61 ctermfg=231 cterm=bold
     hi Pmenu ctermfg=252 ctermbg=236
     hi PmenuSel ctermfg=231 ctermbg=61 cterm=bold
+    hi! link PopupSelected PmenuSel
     silent! hi PmenuMatch ctermfg=111 ctermbg=236 cterm=bold
     silent! hi PmenuMatchSel ctermfg=231 ctermbg=61 cterm=bold
     hi PmenuSbar ctermbg=236
