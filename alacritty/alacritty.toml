@@ -1,3 +1,6 @@
+[general]
+import = ["tokyonight_moon.toml"]
+
 [font]
 size = 14.0
 
@@ -17,24 +20,111 @@ style = "Bold"
 family = "Hack Nerd Font Mono"
 style = "Bold Italic"
 
+[window]
+decorations = "None"
+opacity = 0.67
+startup_mode = "Fullscreen"
+padding = { x = 6, y = 6 }
+dynamic_padding = true
+
+[scrolling]
+history = 50000
+
+[mouse]
+hide_when_typing = true
+bindings = [
+    { mouse = "WheelUp", mods = "Control", action = "IncreaseFontSize" },
+    { mouse = "WheelDown", mods = "Control", action = "DecreaseFontSize" },
+    { mouse = "WheelUp", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "up",
+    ] } },
+    { mouse = "WheelDown", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "down",
+    ] } },
+]
+
 [keyboard]
 bindings = [
-   { key = "Return", mods = "Control|Shift", action = "SpawnNewInstance" }
+    { key = "Return", mods = "Control|Shift", action = "SpawnNewInstance" },
+    { key = "Equals", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "up",
+    ] } },
+    { key = "Plus", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "up",
+    ] } },
+    { key = "NumpadAdd", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "up",
+    ] } },
+    { key = "Minus", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "down",
+    ] } },
+    { key = "_", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "down",
+    ] } },
+    { key = "_", mods = "Control", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "down",
+    ] } },
+    { key = "0", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "reset",
+    ] } },
+    { key = ")", mods = "Control|Shift", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "reset",
+    ] } },
+    { key = ")", mods = "Control", command = { program = "sh", args = [
+        "-c",
+        "exec \"$HOME/.config/alacritty/alacritty-opacity\" \"$1\"",
+        "opacity",
+        "reset",
+    ] } },
 ]
 
 [[hints.enabled]]
-regex = "[^ ]+:\\d+:\\d+"
+command = "xdg-open"
+hyperlinks = true
+post_processing = true
+persist = false
+mouse = { enabled = true, mods = "Control" }
+binding = { key = "O", mods = "Control|Shift" }
+regex = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)[^\u0000-\u001F\u007F-\u009F<>\"\\s{-}\\^⟨⟩`\\\\]+"
+
+[[hints.enabled]]
+regex = '(?:(?:\./|\.\./|/)(?:[A-Za-z0-9._+-]+/)*|[A-Za-z0-9._+-]+/)?[A-Za-z0-9._+-]+\.(?:rs|go|c|h|hh|cc|cpp|cxx|hpp|py|js|mjs|cjs|ts|tsx|jsx|toml|sh|bash|zsh|lua|vim|nix|java|kt|kts|swift|rb|php|zig|json|yml|yaml|md|txt|log|ex|exs|hs|ml|conf|cfg|ini|mk|s|S|asm):[0-9]+:[0-9]+'
 command = { program = "sh", args = [
     "-c",
     "m=$1; f=${m%%:*}; r=${m#*:}; l=${r%%:*}; c=${r##*:}; exec nvim -- \"$f\" \"+call cursor($l, $c)\"",
     "open-at",
 ] }
-mouse = { enabled = true }
-
-[window]
-decorations = "None"
-opacity = 0.67
-startup_mode = "Fullscreen"
+mouse = { enabled = true, mods = "Control" }
 
 [bell]
 animation = "Linear"
@@ -45,43 +135,9 @@ color = "#FFFFFF"
 save_to_clipboard = true
 
 [cursor]
-style = {shape = "Block", blinking = "Always"}
+style = { shape = "Block", blinking = "Always" }
 blink_timeout = 5
-unfocused_hollow = false
+unfocused_hollow = true
 
-# TokyoNight Alacritty Colors
-# Default colors
-[colors.primary]
-background = '#222436'
-foreground = '#c8d3f5'
-
-# Normal colors
-[colors.normal]
-black = '#1b1d2b'
-red = '#ff757f'
-green = '#c3e88d'
-yellow = '#ffc777'
-blue = '#82aaff'
-magenta = '#c099ff'
-cyan = '#86e1fc'
-white = '#828bb8'
-
-# Bright colors
-[colors.bright]
-black = '#444a73'
-red = '#ff757f'
-green = '#c3e88d'
-yellow = '#ffc777'
-blue = '#82aaff'
-magenta = '#c099ff'
-cyan = '#86e1fc'
-white = '#c8d3f5'
-
-# Indexed Colors
-[[colors.indexed_colors]]
-index = 16
-color = '#ff966c'
-
-[[colors.indexed_colors]]
-index = 17
-color = '#c53b53'
+[colors]
+transparent_background_colors = true
