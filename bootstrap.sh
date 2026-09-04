@@ -71,29 +71,6 @@ require_home() {
     fi
 }
 
-should_skip() {
-    case "$rel" in
-        .gitignore | README.md | bootstrap.sh)
-            return 0
-            ;;
-    esac
-    return 1
-}
-
-destination_for() {
-    case "$rel" in
-        .vimrc)
-            dest="$HOME/.vimrc"
-            ;;
-        shell/.zshrc)
-            dest="$HOME/.zshrc"
-            ;;
-        *)
-            dest="$HOME/.config/$rel"
-            ;;
-    esac
-}
-
 overwrite_dest() {
     if [ -d "$dest" ] && [ ! -L "$dest" ]; then
         printf '%s: cannot overwrite directory %s\n' "$PROGNAME" "$dest" >&2
@@ -104,19 +81,30 @@ overwrite_dest() {
 
 link_file() {
     src=$1
-    rel=${src#"$SOURCE_ROOT"/}
-    if should_skip; then
-        return 0
+    dest=$2
+    if [ ! -f "$src" ]; then
+        printf '%s: %s: No such file or directory\n' "$PROGNAME" "$src" >&2
+        exit 1
     fi
-    destination_for
     mkdir -p -- "$(dirname -- "$dest")"
     overwrite_dest
     ln -s -- "$src" "$dest"
     printf '%s -> %s\n' "$dest" "$src"
 }
 
-list_files() {
-    find "$SOURCE_ROOT" \( -name .git -o -name xfce4 \) -prune -o -type f -print
+link_tree() {
+    srcdir=$1
+    destdir=$2
+    if [ ! -d "$srcdir" ]; then
+        printf '%s: %s: No such file or directory\n' "$PROGNAME" "$srcdir" >&2
+        exit 1
+    fi
+    mkdir -p -- "$destdir"
+    find "$srcdir" -type f -print >"$tmp"
+    while IFS= read -r src || [ -n "$src" ]; do
+        rel=${src#"$srcdir"/}
+        link_file "$src" "$destdir/$rel"
+    done <"$tmp"
 }
 
 cleanup() {
@@ -125,16 +113,24 @@ cleanup() {
     fi
 }
 
+link_all() {
+    link_file "$SOURCE_ROOT/.vimrc" "$HOME/.vimrc"
+    link_file "$SOURCE_ROOT/shell/.zshrc" "$HOME/.zshrc"
+    link_file "$SOURCE_ROOT/conky/conky.config" "$HOME/.config/conky/conky.config"
+    link_file "$SOURCE_ROOT/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf"
+    link_tree "$SOURCE_ROOT/alacritty" "$HOME/.config/alacritty"
+    link_tree "$SOURCE_ROOT/espanso" "$HOME/.config/espanso"
+    link_tree "$SOURCE_ROOT/helix" "$HOME/.config/helix"
+    link_tree "$SOURCE_ROOT/yazi" "$HOME/.config/yazi"
+}
+
 main() {
     parse_args "$@"
     require_source
     require_home
     tmp=$(mktemp)
     trap cleanup EXIT
-    list_files >"$tmp"
-    while IFS= read -r src || [ -n "$src" ]; do
-        link_file "$src"
-    done <"$tmp"
+    link_all
 }
 
 main "$@"
