@@ -203,6 +203,38 @@ up() {
     builtin cd -- "$dest"
 }
 
+# cd to DIR (HOME if omitted), then list it.
+# DIR may be a path, -, +N/-N (same as cd), or a dirs -v index.
+cl() {
+    emulate -L zsh
+    setopt EXTENDED_GLOB
+    local dest
+    if (( $# > 1 )); then
+        printf 'Usage: cl [DIR]\n' >&2
+        return 2
+    fi
+    if (( $# == 0 )); then
+        builtin cd -- "$HOME" || return
+    elif [[ $1 == - || $1 == [+-]<-> ]]; then
+        builtin cd "$1" || return
+    elif [[ $1 == (\~|)<-> ]]; then
+        dest=${1#\~}
+        if (( dest == 0 )); then
+            dest=$PWD
+        else
+            dest=${dirstack[dest]}
+        fi
+        if [[ -z $dest ]]; then
+            printf 'cl: %s: directory stack index out of range\n' "$1" >&2
+            return 1
+        fi
+        builtin cd -- "$dest" || return
+    else
+        builtin cd -- "$1" || return
+    fi
+    ls -la
+}
+
 # Pick files with fd+fzf (bat preview) and open in $EDITOR.
 fe() {
     emulate -L zsh
@@ -301,6 +333,7 @@ _hoolies_zshrc_help() {
 
 alias '?'='_hoolies_zshrc_help'
 
+alias d='dirs -v'
 alias dmesg='dmesg --color=always | less -R'
 alias diff='diff --color=auto'
 alias grep='grep --color=auto'

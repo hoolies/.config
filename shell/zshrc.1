@@ -39,6 +39,26 @@ up one directory, or
 .I N
 directories
 .TP
+.B cl
+.RI [ DIR ]
+.B cd
+to
+.I DIR
+(or
+.B HOME
+if omitted), then
+.B ls \-la .
+.I DIR
+may be a path,
+.BR \- ,
+.BR +N " / " \-N
+(same as
+.BR cd ),
+a
+.B dirs \-v
+index, or
+.BR ~N .
+.TP
 .B fe
 pick files with
 .B fd
@@ -129,17 +149,20 @@ at the prompt.
 and
 .B PUSHD_IGNORE_DUPS
 are on.
-.B cd
+.B cd ,
+.B up ,
 and
-.B up
+.B cl
 push the previous directory without printing the stack.
 .B DIRSTACKSIZE
 is 16.
 Use
 .BR d ,
 .BR "cd \-" ,
+.BR "cl \-" ,
 .BR ~1 ,
-.BR ~2 .
+.BR ~2 ,
+.BR "cl 1" .
 .B AUTO_CD
 is off.
 .SH PATH
