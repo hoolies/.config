@@ -1,6 +1,4 @@
-" Single-file: all logic and colors live here (no autoload/ or colors/ files).
-" ~/.vimrc is a symlink to that file.
-
+" Single-file portable file
 set nocompatible
 scriptencoding utf-8
 
@@ -194,6 +192,25 @@ function! HooliesUndotreeApply() abort
     echo 'undo failed: seq=' . seq
     echohl None
   endtry
+endfunction
+
+function! HooliesPickerPopup(title, zindex) abort
+  let width = min([78, &columns - 6])
+  return popup_create(HooliesFilterPickerLines(), {
+        \ 'title': a:title,
+        \ 'pos': 'center',
+        \ 'minwidth': width,
+        \ 'maxwidth': width,
+        \ 'maxheight': 22,
+        \ 'border': [],
+        \ 'padding': [0, 1, 0, 1],
+        \ 'highlight': 'Pmenu',
+        \ 'borderhighlight': ['Function'],
+        \ 'filter': 'HooliesFilterPickerFilter',
+        \ 'mapping': 0,
+        \ 'wrap': 0,
+        \ 'zindex': a:zindex,
+        \ })
 endfunction
 
 function! HooliesPickerSetup() abort
@@ -421,23 +438,8 @@ function! HooliesFilterPicker(title, items) abort
     call HooliesFilterPickerSplit()
     return
   endif
-  let width = min([78, &columns - 6])
   try
-    let s:pick_id = popup_create(HooliesFilterPickerLines(), {
-          \ 'title': s:pick_title,
-          \ 'pos': 'center',
-          \ 'minwidth': width,
-          \ 'maxwidth': width,
-          \ 'maxheight': 22,
-          \ 'border': [],
-          \ 'padding': [0, 1, 0, 1],
-          \ 'highlight': 'Pmenu',
-          \ 'borderhighlight': ['Function'],
-          \ 'filter': 'HooliesFilterPickerFilter',
-          \ 'mapping': 0,
-          \ 'wrap': 0,
-          \ 'zindex': 310,
-          \ })
+    let s:pick_id = HooliesPickerPopup(s:pick_title, 310)
   catch
     let s:pick_id = -1
     call HooliesFilterPickerSplit()
@@ -547,23 +549,8 @@ function! HooliesLivePickerOpen(title, mode, query) abort
     endif
     return
   endif
-  let width = min([78, &columns - 6])
   try
-    let s:pick_id = popup_create(HooliesFilterPickerLines(), {
-          \ 'title': s:pick_title,
-          \ 'pos': 'center',
-          \ 'minwidth': width,
-          \ 'maxwidth': width,
-          \ 'maxheight': 22,
-          \ 'border': [],
-          \ 'padding': [0, 1, 0, 1],
-          \ 'highlight': 'Pmenu',
-          \ 'borderhighlight': ['Function'],
-          \ 'filter': 'HooliesFilterPickerFilter',
-          \ 'mapping': 0,
-          \ 'wrap': 0,
-          \ 'zindex': 310,
-          \ })
+    let s:pick_id = HooliesPickerPopup(s:pick_title, 310)
   catch
     let s:pick_id = -1
     return
@@ -1663,35 +1650,23 @@ endfunction
 
 function! HooliesDashboardItems() abort
   return [
-        \ ['f', 'Find file', 'call HooliesDashboardFind()'],
-        \ ['n', 'New file', 'call HooliesDashboardNew()'],
-        \ ['r', 'Recent files', 'call HooliesDashboardRecent()'],
-        \ ['g', 'Project grep', 'call HooliesDashboardGrep()'],
-        \ ['G', 'Git files', 'call HooliesDashboardGit()'],
-        \ ['c', 'Config', 'call HooliesDashboardConfig()'],
-        \ ['e', 'Explorer', 'call HooliesDashboardExplore()'],
+        \ ['f', 'Find file', 'call HooliesProjectFiles()'],
+        \ ['n', 'New file', 'enew'],
+        \ ['r', 'Recent files', 'call HooliesOldfilesPick()'],
+        \ ['g', 'Project grep', 'call HooliesGrepInteractive()'],
+        \ ['G', 'Git files', 'call HooliesGitFiles()'],
+        \ ['c', 'Config', 'call HooliesFindConfigFiles()'],
+        \ ['e', 'Explorer', 'call HooliesExploreToggle()'],
         \ ['q', 'Quit', 'qa'],
         \ ]
 endfunction
 
-function! HooliesDashboardPadLeft(line, left) abort
-  return repeat(' ', a:left) . a:line
-endfunction
-
 function! HooliesDashboardBlockWidth(lines) abort
-  let w = 0
-  for l in a:lines
-    let w = max([w, strdisplaywidth(l)])
-  endfor
-  return w
+  return max(map(copy(a:lines), {_, l -> strdisplaywidth(l)}))
 endfunction
 
 function! HooliesDashboardNormalize(lines, width) abort
-  let out = []
-  for l in a:lines
-    call add(out, l . repeat(' ', a:width - strdisplaywidth(l)))
-  endfor
-  return out
+  return map(copy(a:lines), {_, l -> l . repeat(' ', a:width - strdisplaywidth(l))})
 endfunction
 
 function! HooliesDashboardRender() abort
@@ -1714,13 +1689,13 @@ function! HooliesDashboardRender() abort
 
   let body = []
   for l in logo
-    call add(body, HooliesDashboardPadLeft(l, logo_left))
+    call add(body, repeat(' ', logo_left) . l)
   endfor
   call add(body, '')
-  call add(body, HooliesDashboardPadLeft(sub, sub_left))
+  call add(body, repeat(' ', sub_left) . sub)
   call add(body, '')
   for l in labels
-    call add(body, HooliesDashboardPadLeft(l, item_left))
+    call add(body, repeat(' ', item_left) . l)
   endfor
 
   let top = max([0, (&lines - len(body) - 2) / 2])
@@ -1733,39 +1708,9 @@ function! HooliesDashboardClose() abort
   endif
 endfunction
 
-function! HooliesDashboardFind() abort
+function! HooliesDashboardRun(cmd) abort
   call HooliesDashboardClose()
-  call HooliesProjectFiles()
-endfunction
-
-function! HooliesDashboardNew() abort
-  call HooliesDashboardClose()
-  enew
-endfunction
-
-function! HooliesDashboardRecent() abort
-  call HooliesDashboardClose()
-  call HooliesOldfilesPick()
-endfunction
-
-function! HooliesDashboardGrep() abort
-  call HooliesDashboardClose()
-  call HooliesGrepInteractive()
-endfunction
-
-function! HooliesDashboardGit() abort
-  call HooliesDashboardClose()
-  call HooliesGitFiles()
-endfunction
-
-function! HooliesDashboardConfig() abort
-  call HooliesDashboardClose()
-  call HooliesFindConfigFiles()
-endfunction
-
-function! HooliesDashboardExplore() abort
-  call HooliesDashboardClose()
-  call HooliesExploreToggle()
+  execute a:cmd
 endfunction
 
 function! HooliesDashboardHighlight() abort
@@ -1779,9 +1724,10 @@ endfunction
 
 function! HooliesDashboardMaps() abort
   for item in HooliesDashboardItems()
-    execute 'nnoremap <buffer> <silent> ' . item[0] . ' :' . item[2] . '<CR>'
+    execute 'nnoremap <buffer> <silent> ' . item[0]
+          \ . ' :call HooliesDashboardRun(' . string(item[2]) . ')<CR>'
   endfor
-  nnoremap <buffer> <silent> <Esc> :call HooliesDashboardNew()<CR>
+  nnoremap <buffer> <silent> <Esc> :call HooliesDashboardRun('enew')<CR>
 endfunction
 
 function! HooliesDashboard() abort
@@ -2059,6 +2005,11 @@ function! HooliesPairShouldOpen(open) abort
   return 1
 endfunction
 
+function! HooliesPairIsEmpty() abort
+  let prev = HooliesPairPrev()
+  return prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# HooliesPairNext()
+endfunction
+
 function! HooliesPairOpen(open) abort
   if !HooliesPairShouldOpen(a:open)
     return a:open
@@ -2070,10 +2021,7 @@ function! HooliesPairClose(close) abort
   if &paste
     return a:close
   endif
-  if HooliesPairNext() ==# a:close
-    return "\<Right>"
-  endif
-  return a:close
+  return HooliesPairNext() ==# a:close ? "\<Right>" : a:close
 endfunction
 
 function! HooliesPairQuote(q) abort
@@ -2089,34 +2037,15 @@ function! HooliesPairQuote(q) abort
   return a:q
 endfunction
 
-function! HooliesPairBS() abort
-  let prev = HooliesPairPrev()
-  let nxt = HooliesPairNext()
-  if prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# nxt
-    return "\<BS>\<Del>"
-  endif
-  return "\<BS>"
-endfunction
-
-function! HooliesPairLeftOrBS() abort
-  let prev = HooliesPairPrev()
-  let nxt = HooliesPairNext()
-  if prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# nxt
-    return "\<BS>\<Del>"
-  endif
-  return "\<Left>"
+function! HooliesPairEat(fallback) abort
+  return HooliesPairIsEmpty() ? "\<BS>\<Del>" : a:fallback
 endfunction
 
 function! HooliesCR() abort
   if pumvisible()
     return "\<C-y>"
   endif
-  let prev = HooliesPairPrev()
-  let nxt = HooliesPairNext()
-  if prev !=# '' && has_key(s:pair_close, prev) && s:pair_close[prev] ==# nxt
-    return "\<CR>\<Esc>O"
-  endif
-  return "\<CR>"
+  return HooliesPairIsEmpty() ? "\<CR>\<Esc>O" : "\<CR>"
 endfunction
 
 function! HooliesInCommentOrString() abort
@@ -2733,6 +2662,23 @@ function! HooliesVimFuncLinkFix() abort
   hi! link vim9Func Function
 endfunction
 
+function! HooliesHiLinkFamily() abort
+  hi! link Character String
+  hi! link Delimiter Operator
+  hi! link Tag Special
+  for [g, t] in [
+        \ ['Number', 'Constant'], ['Boolean', 'Constant'], ['Float', 'Constant'],
+        \ ['SpecialChar', 'Constant'], ['Debug', 'Constant'],
+        \ ['Conditional', 'Statement'], ['Repeat', 'Statement'], ['Label', 'Statement'],
+        \ ['Keyword', 'Statement'], ['Exception', 'Statement'],
+        \ ['Include', 'PreProc'], ['Define', 'PreProc'], ['Macro', 'PreProc'],
+        \ ['PreCondit', 'PreProc'],
+        \ ['StorageClass', 'Type'], ['Structure', 'Type'], ['Typedef', 'Type'],
+        \ ]
+    execute 'hi! link ' . g . ' ' . t
+  endfor
+endfunction
+
 function! HooliesApplyColors() abort
   hi clear
   if exists('syntax_on')
@@ -2776,36 +2722,17 @@ function! HooliesApplyColors() abort
     hi SpellCap gui=undercurl guisp=#e0af68 guifg=NONE guibg=NONE ctermfg=214 ctermbg=NONE cterm=underline
     hi SpellLocal gui=undercurl guisp=#9ece6a guifg=NONE guibg=NONE ctermfg=149 ctermbg=NONE cterm=underline
     hi SpellRare gui=undercurl guisp=#bb9af7 guifg=NONE guibg=NONE ctermfg=177 ctermbg=NONE cterm=underline
-    hi Function guifg=#7aa2f7 guibg=NONE gui=NONE cterm=NONE
     hi Constant guifg=#ff9e64 guibg=NONE
     hi String guifg=#9ece6a guibg=NONE
-    hi Character guifg=#9ece6a guibg=NONE
-    hi Number guifg=#ff9e64 guibg=NONE
-    hi Boolean guifg=#ff9e64 guibg=NONE
-    hi Float guifg=#ff9e64 guibg=NONE
-    hi Identifier guifg=#bb9af7 guibg=NONE
     hi Statement guifg=#bb9af7 guibg=NONE
-    hi Conditional guifg=#bb9af7 guibg=NONE
-    hi Repeat guifg=#bb9af7 guibg=NONE
-    hi Label guifg=#bb9af7 guibg=NONE
     hi Operator guifg=#89ddff guibg=NONE
-    hi Keyword guifg=#bb9af7 guibg=NONE
-    hi Exception guifg=#bb9af7 guibg=NONE
     hi PreProc guifg=#7dcfff guibg=NONE
-    hi Include guifg=#7dcfff guibg=NONE
-    hi Define guifg=#7dcfff guibg=NONE
-    hi Macro guifg=#7dcfff guibg=NONE
-    hi PreCondit guifg=#7dcfff guibg=NONE
     hi Type guifg=#2ac3de guibg=NONE
-    hi StorageClass guifg=#2ac3de guibg=NONE
-    hi Structure guifg=#2ac3de guibg=NONE
-    hi Typedef guifg=#2ac3de guibg=NONE
     hi Special guifg=#7aa2f7 guibg=NONE
-    hi SpecialChar guifg=#ff9e64 guibg=NONE
-    hi Tag guifg=#7aa2f7 guibg=NONE
-    hi Delimiter guifg=#89ddff guibg=NONE
     hi SpecialComment guifg=#565f89 guibg=NONE
-    hi Debug guifg=#ff9e64 guibg=NONE
+    hi Function guifg=#7aa2f7 guibg=NONE gui=NONE cterm=NONE
+    hi! link Identifier Statement
+    call HooliesHiLinkFamily()
     hi Error guifg=#f7768e guibg=NONE
     hi Todo guifg=#e0af68 guibg=NONE gui=bold
     hi Title guifg=#7aa2f7 gui=bold
@@ -2842,33 +2769,14 @@ function! HooliesApplyColors() abort
     hi Function ctermfg=111 ctermbg=NONE cterm=NONE
     hi Constant ctermfg=215
     hi String ctermfg=150
-    hi Character ctermfg=150
-    hi Number ctermfg=215
-    hi Boolean ctermfg=215
-    hi Float ctermfg=215
     hi Identifier ctermfg=176
     hi Statement ctermfg=141
-    hi Conditional ctermfg=141
-    hi Repeat ctermfg=141
-    hi Label ctermfg=141
     hi Operator ctermfg=117
-    hi Keyword ctermfg=141
-    hi Exception ctermfg=141
     hi PreProc ctermfg=117
-    hi Include ctermfg=117
-    hi Define ctermfg=117
-    hi Macro ctermfg=117
-    hi PreCondit ctermfg=117
     hi Type ctermfg=80
-    hi StorageClass ctermfg=80
-    hi Structure ctermfg=80
-    hi Typedef ctermfg=80
     hi Special ctermfg=111
-    hi SpecialChar ctermfg=215
-    hi Tag ctermfg=111
-    hi Delimiter ctermfg=117
     hi SpecialComment ctermfg=60
-    hi Debug ctermfg=215
+    call HooliesHiLinkFamily()
     hi Error ctermfg=203
     hi Todo ctermfg=179 cterm=bold
     hi Title ctermfg=111 cterm=bold
@@ -3080,7 +2988,7 @@ nnoremap <silent> <C-Left> :vertical resize -2<CR>
 nnoremap <silent> <C-Right> :vertical resize +2<CR>
 
 inoremap <C-k> <Up>
-inoremap <silent> <expr> <C-h> HooliesPairLeftOrBS()
+inoremap <silent> <expr> <C-h> HooliesPairEat("\<Left>")
 inoremap <C-l> <Right>
 inoremap jj <Esc>
 
@@ -3099,10 +3007,11 @@ nnoremap <silent> <leader>bw :bwipeout<CR>
 nnoremap <silent> <leader>bb :enew<CR>
 nnoremap <silent> <A-ESC> :call HooliesCloseOtherBuffers()<CR>
 
-tnoremap <silent> <C-h> <C-\><C-n><C-w>h
-tnoremap <silent> <C-j> <C-\><C-n><C-w>j
-tnoremap <silent> <C-k> <C-\><C-n><C-w>k
-tnoremap <silent> <C-l> <C-\><C-n><C-w>l
+for s:d in ['h', 'j', 'k', 'l']
+  execute 'nnoremap <silent> <C-' . s:d . '> :call HooliesTmuxNavigate("' . s:d . '")<CR>'
+  execute 'tnoremap <silent> <C-' . s:d . '> <C-\><C-n><C-w>' . s:d
+endfor
+unlet s:d
 
 nnoremap <silent> <leader>u :call HooliesUndotreeToggle()<CR>
 
@@ -3124,16 +3033,15 @@ cnoremap <C-n> <Down>
 inoremap <silent> <expr> <Tab> HooliesTabComplete()
 inoremap <silent> <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
 inoremap <silent> <expr> <CR> HooliesCR()
-inoremap <silent> <expr> <BS> HooliesPairBS()
-inoremap <silent> <expr> ( HooliesPairOpen('(')
-inoremap <silent> <expr> [ HooliesPairOpen('[')
-inoremap <silent> <expr> { HooliesPairOpen('{')
-inoremap <silent> <expr> ) HooliesPairClose(')')
-inoremap <silent> <expr> ] HooliesPairClose(']')
-inoremap <silent> <expr> } HooliesPairClose('}')
-inoremap <silent> <expr> " HooliesPairQuote('"')
-inoremap <silent> <expr> ' HooliesPairQuote("'")
-inoremap <silent> <expr> ` HooliesPairQuote('`')
+inoremap <silent> <expr> <BS> HooliesPairEat("\<BS>")
+for s:p in ['(', '[', '{']
+  execute 'inoremap <silent> <expr> ' . s:p . ' HooliesPairOpen(' . string(s:p) . ')'
+  execute 'inoremap <silent> <expr> ' . s:pair_close[s:p] . ' HooliesPairClose(' . string(s:pair_close[s:p]) . ')'
+endfor
+for s:q in ['"', "'", '`']
+  execute 'inoremap <silent> <expr> ' . s:q . ' HooliesPairQuote(' . string(s:q) . ')'
+endfor
+unlet s:p s:q
 inoremap <silent> <C-Space> <C-x><C-o>
 if !has('gui_running')
   imap <C-@> <C-Space>
@@ -3162,18 +3070,13 @@ nnoremap <silent> [Q :cfirst<CR>
 xnoremap <silent> < <gv
 xnoremap <silent> > >gv
 
-nnoremap <silent> <C-h> :call HooliesTmuxNavigate('h')<CR>
-nnoremap <silent> <C-j> :call HooliesTmuxNavigate('j')<CR>
-nnoremap <silent> <C-k> :call HooliesTmuxNavigate('k')<CR>
-nnoremap <silent> <C-l> :call HooliesTmuxNavigate('l')<CR>
-
 nnoremap <silent> <leader>fb :call HooliesBufferPicker()<CR>
 nnoremap <silent> <leader>ff :call HooliesProjectFiles()<CR>
 nnoremap <silent> <leader>flf :call HooliesGrepInteractive()<CR>
 nnoremap <silent> <leader>flg :call HooliesGitFiles()<CR>
 nnoremap <silent> <leader>fh :call HooliesHelpPick()<CR>
 nnoremap <silent> <leader>qs :call HooliesSessionSave()<CR>
-nnoremap <silent> <leader>ql :call HooliesSessionLoad()<CR> 
+nnoremap <silent> <leader>ql :call HooliesSessionLoad()<CR>
 nnoremap <silent> <leader>fo :call HooliesOldfilesPick()<CR>
 nnoremap <silent> <leader>fs :call HooliesGrepCursorWord()<CR>
 nnoremap <silent> <leader>ft :call HooliesCurrentBufferGrep()<CR>
