@@ -133,11 +133,11 @@ RTFM / completion (not fzf completion)
 stop at slashes, not whole paths
 .SH PROMPT
 Two lines: cwd in cyan, then the last exit status.
-After a command, its wall-clock duration is right-aligned in yellow
-on the path line
-.RI ( 0.42s ,
-.IR 1m05s ,
-.IR 1h02m03s ).
+After a command, its wall-clock duration is right-aligned in the same
+gray as the exit status, always in seconds with millisecond precision
+.RI ( 0.001s ,
+.IR 21.123s ,
+.IR 65.500s ).
 Pressing Enter with an empty line hides the duration.
 A blank line is inserted after command output.
 On tall terminals a spacer keeps the prompt off the bottom edge.

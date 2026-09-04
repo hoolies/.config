@@ -74,19 +74,11 @@ _hoolies_prompt_spacer() {
 _hoolies_fmt_cmd_duration() {
     emulate -L zsh
     local -F elapsed=$1
-    local -i h m s
-    if (( elapsed >= 3600 )); then
-        h=$(( elapsed / 3600 ))
-        m=$(( (elapsed % 3600) / 60 ))
-        s=$(( elapsed % 60 ))
-        printf '%dh%02dm%02ds' h m s
-    elif (( elapsed >= 60 )); then
-        m=$(( elapsed / 60 ))
-        s=$(( elapsed % 60 ))
-        printf '%dm%02ds' m s
-    else
-        printf '%.2fs' $elapsed
-    fi
+    local -i total_ms
+
+    total_ms=$(( elapsed * 1000 + 0.5 ))
+    (( total_ms < 0 )) && total_ms=0
+    printf '%d.%03ds' $(( total_ms / 1000 )) $(( total_ms % 1000 ))
 }
 
 _hoolies_prompt_timer_preexec() {
@@ -112,7 +104,7 @@ _hoolies_prompt_set() {
         vis=$(( 1 + ${#path_disp} + ${#elapsed_str} ))
         pad=$(( cols - vis ))
         (( pad < 1 )) && pad=1
-        PS1=$'\n %F{cyan}%~%f'"${(l:pad:: :)}%F{yellow}${elapsed_str}%f"$'\n %F{white}%?  '
+        PS1=$'\n %F{cyan}%~%f'"${(l:pad:: :)}%F{white}${elapsed_str}%f"$'\n %F{white}%?  '
     else
         PS1=$'\n %F{cyan}%~%f\n %F{white}%?  '
     fi
