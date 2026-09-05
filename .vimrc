@@ -29,6 +29,7 @@ let s:cmd_pal_comps = []
 let s:cmd_pal_comp_i = -1
 let s:cmd_pal_comp_pfx = ''
 let s:cmd_pal_width = 72
+let s:cmd_pal_up = 3
 let s:pick_id = -1
 let s:pick_query = ''
 let s:pick_all = []
@@ -2550,6 +2551,14 @@ function! HooliesCmdPalette(...) abort
           \ 'wrap': 0,
           \ 'zindex': 320,
           \ })
+    let pos = popup_getpos(s:cmd_pal_id)
+    if !empty(pos)
+      call popup_setoptions(s:cmd_pal_id, {
+            \ 'pos': 'topleft',
+            \ 'line': max([1, pos.line - s:cmd_pal_up]),
+            \ 'col': pos.col,
+            \ })
+    endif
     call HooliesCmdPaletteMenuRefresh()
   catch
     let s:cmd_pal_id = -1
