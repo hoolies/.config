@@ -38,6 +38,7 @@ let s:pick_title = ' Pick '
 let s:pick_mode = 'filter'
 let s:pick_grep_timer = -1
 let s:pick_grep_regex = 0
+let s:pick_file_max = 4000
 let s:maps_query = ''
 let s:maps_searching = 0
 let s:maps_search_start = 1
@@ -475,8 +476,11 @@ function! HooliesPickPaths(title, paths) abort
   let items = []
   let seen = {}
   for p in a:paths
-    let path = resolve(expand(p))
-    if path ==# '' || has_key(seen, path)
+    if p ==# ''
+      continue
+    endif
+    let path = p[0] ==# '/' ? p : fnamemodify(p, ':p')
+    if has_key(seen, path)
       continue
     endif
     let seen[path] = 1
@@ -1710,6 +1714,7 @@ endfunction
 
 function! HooliesDashboardRun(cmd) abort
   call HooliesDashboardClose()
+  redraw
   execute a:cmd
 endfunction
 
@@ -1724,10 +1729,10 @@ endfunction
 
 function! HooliesDashboardMaps() abort
   for item in HooliesDashboardItems()
-    execute 'nnoremap <buffer> <silent> ' . item[0]
-          \ . ' :call HooliesDashboardRun(' . string(item[2]) . ')<CR>'
+    execute 'nnoremap <buffer> <silent> <nowait> ' . item[0]
+          \ . ' <Cmd>call HooliesDashboardRun(' . string(item[2]) . ')<CR>'
   endfor
-  nnoremap <buffer> <silent> <Esc> :call HooliesDashboardRun('enew')<CR>
+  nnoremap <buffer> <silent> <nowait> <Esc> <Cmd>call HooliesDashboardRun('enew')<CR>
 endfunction
 
 function! HooliesDashboard() abort
@@ -1777,14 +1782,57 @@ function! HooliesGrepOpenBuffersInput() abort
   call HooliesGrepOpenBuffers(pat)
 endfunction
 
+function! HooliesHeadLines(cmd, limit) abort
+  return systemlist(a:cmd . ' | head -n ' . a:limit)
+endfunction
+
+function! HooliesRgFilesCmd(dir) abort
+  let cmd = 'rg --files'
+  for g in [
+        \ '!**/out/**',
+        \ '!**/rootfs*/**',
+        \ '!**/node_modules/**',
+        \ '!**/target/**',
+        \ '!**/dist/**',
+        \ '!**/build/**',
+        \ '!**/.build/**',
+        \ '!**/__pycache__/**',
+        \ '!**/.git/**',
+        \ '!**/.hg/**',
+        \ '!**/.svn/**',
+        \ '!**/.venv/**',
+        \ '!**/venv/**',
+        \ '!**/.mypy_cache/**',
+        \ '!**/.tox/**',
+        \ ]
+    let cmd .= ' -g ' . shellescape(g)
+  endfor
+  return cmd . ' -- ' . shellescape(a:dir)
+endfunction
+
+function! HooliesFindFilesCmd(dir) abort
+  let names = [
+        \ 'out', 'node_modules', 'target', 'dist', 'build', '.build',
+        \ '__pycache__', '.git', '.hg', '.svn', '.venv', 'venv',
+        \ '.mypy_cache', '.tox',
+        \ ]
+  let tests = ['-name ' . shellescape('rootfs*')]
+  for n in names
+    call add(tests, '-name ' . shellescape(n))
+  endfor
+  return 'find ' . shellescape(a:dir)
+        \ . ' \( ' . join(tests, ' -o ') . ' \) -prune -o -type f -print'
+endfunction
+
 function! HooliesGitFiles() abort
   let root = HooliesGitRoot()
   if root ==# ''
     echo 'Not a git repo'
     return
   endif
-  let files = systemlist('git -C ' . shellescape(root) . ' ls-files')
-  if v:shell_error
+  let files = HooliesHeadLines(
+        \ 'git -C ' . shellescape(root) . ' ls-files', s:pick_file_max)
+  if empty(files)
     echo 'git ls-files failed'
     return
   endif
@@ -1793,26 +1841,27 @@ function! HooliesGitFiles() abort
 endfunction
 
 function! HooliesProjectFiles() abort
+  echo 'Scanning files...'
+  redraw
   let root = HooliesGitRoot()
+  let dir = root !=# '' ? root : getcwd()
+  let maxn = s:pick_file_max
   let files = []
   if root !=# '' && executable('git')
-    let files = systemlist('git -C ' . shellescape(root) . ' ls-files -co --exclude-standard')
-    if v:shell_error
-      let files = []
-    else
+    let files = HooliesHeadLines(
+          \ 'git -C ' . shellescape(root) . ' ls-files -co --exclude-standard',
+          \ maxn)
+    if !empty(files)
       call map(files, {_, p -> root . '/' . p})
     endif
   endif
   if empty(files) && executable('rg')
-    let dir = root !=# '' ? root : getcwd()
-    let files = systemlist('rg --files --sort path -- ' . shellescape(dir))
+    let files = HooliesHeadLines(HooliesRgFilesCmd(dir), maxn)
   endif
   if empty(files)
-    let dir = root !=# '' ? root : getcwd()
-    let files = glob(dir . '/**/*', 0, 1)
-    call filter(files, {_, p -> filereadable(p) && !isdirectory(p)})
+    let files = HooliesHeadLines(HooliesFindFilesCmd(dir), maxn)
   endif
-  call filter(files, {_, p -> p !=# '' && filereadable(p)})
+  call filter(files, {_, p -> p !=# ''})
   call HooliesPickPaths('Files', files)
 endfunction
 
