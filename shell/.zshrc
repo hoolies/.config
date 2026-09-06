@@ -224,7 +224,7 @@ cl() {
     else
         builtin cd -- "$1" || return
     fi
-    ls -la
+    ls --color=auto -A --group-directories-first
 }
 
 # Pick files with fd+fzf (bat preview) and open in $EDITOR.
