@@ -1613,17 +1613,57 @@ function! HooliesYankToSystem() abort
   endif
 endfunction
 
+function! HooliesYankFlashPos(type, start, end) abort
+  let l1 = a:start[1]
+  let l2 = a:end[1]
+  let c1 = a:start[2]
+  let c2 = a:end[2]
+  if a:type ==# 'V'
+    return map(range(l1, l2), {_, l -> [l]})
+  endif
+  if l1 == l2
+    let n = min([c2, strlen(getline(l1))]) - c1 + 1
+    return [[l1, c1, n < 1 ? 1 : n]]
+  endif
+  let pos = []
+  let n = strlen(getline(l1)) - c1 + 1
+  call add(pos, n > 0 ? [l1, c1, n] : [l1, c1])
+  if l2 - l1 > 1
+    call extend(pos, map(range(l1 + 1, l2 - 1), {_, l -> [l]}))
+  endif
+  let last = min([c2, strlen(getline(l2))])
+  call add(pos, last > 0 ? [l2, 1, last] : [l2])
+  return pos
+endfunction
+
 function! HooliesFlashYank() abort
   if !exists('v:event') || get(v:event, 'operator', '') !=# 'y' | return | endif
   call HooliesYankToSystem()
-  let l1 = getpos("'[")[1]
-  let l2 = getpos("']")[1]
-  if l1 < 1 || l2 < 1 | return | endif
-  let pos = map(range(l1, l2), {_, l -> [l]})
-  let mid = matchaddpos('Search', pos)
-  if has('timers')
-    call timer_start(300, {-> execute('silent! call matchdelete(' . mid . ')')})
+  let start = getpos("'[")
+  let end = getpos("']")
+  if start[1] < 1 || end[1] < 1 | return | endif
+  let type = get(v:event, 'regtype', 'v')
+  let ids = []
+  if type[0] ==# "\<C-v>"
+    let v1 = virtcol("'[")
+    let v2 = virtcol("']")
+    if v1 > v2
+      let [v1, v2] = [v2, v1]
+    endif
+    let pat = '\%>' . (start[1] - 1) . 'l\%<' . (end[1] + 1) . 'l'
+          \ . '\%>' . (v1 - 1) . 'v\%<' . (v2 + 1) . 'v'
+    call add(ids, matchadd('Search', pat))
+  else
+    let pos = HooliesYankFlashPos(type, start, end)
+    let i = 0
+    while i < len(pos)
+      call add(ids, matchaddpos('Search', pos[i : i + 7]))
+      let i += 8
+    endwhile
   endif
+  if empty(ids) || !has('timers') | return | endif
+  let cmd = join(map(copy(ids), {_, id -> 'silent! call matchdelete(' . id . ')'}), '|')
+  call timer_start(300, {-> execute(cmd)})
 endfunction
 
 function! HooliesVimEnterNoArgs() abort
