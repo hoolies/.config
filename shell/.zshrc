@@ -171,7 +171,7 @@ y() {
 showpath() {
     emulate -L zsh
     local p
-    for p in "${(@s/:/)PATH}"; do
+    for p in "${(@ous/:/)PATH}"; do
         if [[ -d "$p" ]]; then
             printf '\033[32m%s\033[0m\n' "$p"
         else
