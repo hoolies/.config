@@ -1,4 +1,4 @@
-.TH ZSHRC 1 "2026-09-04" "hoolies" "User Commands"
+.TH ZSHRC 1 "2026-09-22" "hoolies" "User Commands"
 .SH NAME
 zshrc \- interactive zsh configuration
 .SH SYNOPSIS
@@ -7,8 +7,8 @@ zshrc \- interactive zsh configuration
 .SH DESCRIPTION
 This is the help for the interactive
 .B ~/.zshrc
-(a symlink to this directory's
-.BR .zshrc ).
+(a symlink to
+.BR /opt/.config/shell/.zshrc ).
 Type
 .B ?
 and Enter to read this page.
@@ -47,7 +47,7 @@ to
 (or
 .B HOME
 if omitted), then
-.B ls \-la .
+.B ls \-\-color=auto \-A \-\-group\-directories\-first .
 .I DIR
 may be a path,
 .BR \- ,
@@ -74,9 +74,16 @@ copy
 to
 .IB FILE .YYYYMMDD-HHMMSS
 .TP
+.B l.
+list hidden names in the current directory, omitting
+.B .
+and
+.B ..
+.TP
 .B _hoolies_update_zsh_plugins
 fast-forward every git plugin under
-.B ~/.zsh
+.BR ~/.zsh .
+A stalled fetch stops after 30 seconds.
 .SH ALIASES
 .TP
 .B d
@@ -88,9 +95,6 @@ fast-forward every git plugin under
 .TP
 .B ll
 long listing, hidden files, newest last
-.TP
-.B l.
-list only hidden names in the current directory
 .TP
 .BR dmesg ", " diff ", " grep ", " ip
 color output (dmesg is piped to
@@ -190,8 +194,14 @@ Unknown command names (typos) are not saved.
 .B HIST_VERIFY
 expands history before running it.
 .SH COMPLETION
-Menu select, case-insensitive matching, cached under
-.BR ~/.cache/zsh/zcompcache .
+Menu select, case-insensitive matching.
+The style cache is
+.B ~/.cache/zsh/zcompcache
+and the compinit dump is
+.B ~/.cache/zsh/zcompdump
+(or under
+.B $XDG_CACHE_HOME/zsh
+when that variable is set).
 .B ls
 colors are applied to completion lists when
 .B dircolors
@@ -206,8 +216,8 @@ Syntax highlighting is loaded last.
 .SH FILES
 .TP
 .B ~/.zshrc
-symlink to the tracked
-.B .zshrc
+symlink to
+.B /opt/.config/shell/.zshrc
 .TP
 .B /opt/.config/shell/zshrc.1
 this manual

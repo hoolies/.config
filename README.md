@@ -7,7 +7,7 @@ Shared Linux dotfiles: terminal, shell, editors, and a few desktop tools.
 Clone this repository, then run `bootstrap.sh`. It creates one symlink per file. Missing directories are created. Existing files and symlinks are overwritten.
 
 ```sh
-git clone https://github.com/hoolies/.config /opt/
+git clone https://github.com/hoolies/.config /opt/.config
 /opt/.config/bootstrap.sh
 ```
 
@@ -70,7 +70,7 @@ Tokyo Night Moon, relative line numbers, indent guides, inlay hints.
 - `` ` `` — hide or show the status bar
 - `c` — new named window
 - `<` / `>` — swap windows
-- Plugins: vim-tmux-navigator, Tokyo Night, resurrect/continuum (restore sessions), fzf, yank, logging, notify
+- Plugins: vim-tmux-navigator, Tokyo Night, tmux-matryoshka, tmux-sensible, resurrect/continuum (restore sessions), fzf, yank, logging, notify
 
 TPM is used only if it is already installed at `~/.tmux/plugins/tpm`. The config does not clone it.
 
@@ -125,20 +125,21 @@ File manager. Opening a text file runs Neovim and waits until you quit.
 
 ### zsh
 
-Interactive shell. Type `?` and Enter for the full manual (`zshrc.1`).
+Interactive shell. Type `?` and Enter to open `/opt/.config/shell/zshrc.1`. Edit that manual in the `/opt/.config` checkout.
 
-Prompt is two lines: directory, then exit status. After a command, its duration is shown on the right (milliseconds). Empty Enter hides the duration.
+Prompt is two lines: directory, then exit status. After a command, its duration is shown on the right in seconds with millisecond precision (`1.234s`). Empty Enter hides the duration.
 
 **Commands**
 
 - `y` — open yazi, then `cd` to where you leave
 - `showpath` — print `PATH` (green if the directory exists)
 - `up [N]` — `cd` up N directories
-- `cl [DIR]` — `cd` then `ls -la`
+- `cl [DIR]` — `cd` then `ls -A` (color, directories first)
 - `fe` — pick files with fzf and open them in `$EDITOR`
 - `bak FILE` — copy to `FILE.YYYYMMDD-HHMMSS`
+- `l.` — list hidden names, omitting `.` and `..`
 
-**Aliases:** `ls` / `ll` / `l.` with color; `d` for the directory stack.
+**Aliases:** `ls` / `ll` with color; `d` for the directory stack.
 
 **Keys:** Emacs layout. Ctrl+Space accepts an autosuggestion. Up/Down search history. Ctrl+T / Alt+C / Ctrl+R are fzf (files, directories, history).
 

@@ -269,6 +269,18 @@ bak() {
     printf '%s\n' "$dest"
 }
 
+# Hidden names in the current directory. .* also matches . and .., so drop those.
+function l. {
+    emulate -L zsh
+    setopt EXTENDED_GLOB
+    local -a hidden
+    hidden=( .*(N) )
+    hidden=( ${hidden:#.} )
+    hidden=( ${hidden:#..} )
+    (( $#hidden )) || return 0
+    command ls -d --color=auto --group-directories-first "$@" -- "${hidden[@]}"
+}
+
 _hoolies_zshrc_help_usage() {
     printf '%s\n' \
         'Usage: ? [OPTION]...' \
@@ -282,28 +294,34 @@ _hoolies_zshrc_help_usage() {
 # ? is a glob; the alias is expanded before filename generation.
 _hoolies_zshrc_help() {
     emulate -L zsh
-    local page arg
-    for arg in "$@"; do
-        case $arg in
+    local page
+    while [[ $# -gt 0 ]]; do
+        case $1 in
             -h | --help)
                 _hoolies_zshrc_help_usage
                 return 0
                 ;;
             --)
+                shift
                 break
                 ;;
             -*)
-                printf '?: unrecognized option %s\n' "$arg" >&2
+                printf '?: unrecognized option %s\n' "$1" >&2
                 printf "Try '? --help' for more information.\n" >&2
                 return 2
                 ;;
             *)
-                printf '?: extra operand %s\n' "$arg" >&2
+                printf '?: extra operand %s\n' "$1" >&2
                 printf "Try '? --help' for more information.\n" >&2
                 return 2
                 ;;
         esac
     done
+    if [[ $# -gt 0 ]]; then
+        printf '?: extra operand %s\n' "$1" >&2
+        printf "Try '? --help' for more information.\n" >&2
+        return 2
+    fi
     page=/opt/.config/shell/zshrc.1
     if [[ ! -f $page ]]; then
         printf '?: %s: No such file or directory\n' "$page" >&2
@@ -328,7 +346,6 @@ alias dmesg='dmesg --color=always | less -R'
 alias diff='diff --color=auto'
 alias grep='grep --color=auto'
 alias ip='ip --color=auto'
-alias l.='ls -d .* --color=auto --group-directories-first'
 alias ll='ls --color=auto -lAthr --group-directories-first'
 alias ls='ls --color=auto -A --group-directories-first'
 
@@ -349,7 +366,6 @@ setopt BEEP EXTENDED_GLOB NOMATCH INTERACTIVE_COMMENTS
 setopt AUTO_PUSHD PUSHD_IGNORE_DUPS PUSHD_SILENT
 unsetopt AUTO_CD
 DIRSTACKSIZE=16
-REPORTTIME=5
 
 # History
 _hoolies_hist_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zsh"
@@ -408,6 +424,22 @@ _hoolies_source() {
     done
 }
 
+# Run git without a prompt. Stop after 30 seconds when timeout exists.
+_hoolies_git() {
+    emulate -L zsh
+    local -a cmd
+    cmd=(git "$@")
+    if command -v timeout >/dev/null 2>&1; then
+        cmd=(timeout 30 "${cmd[@]}")
+    fi
+    GIT_TERMINAL_PROMPT=0 command "${cmd[@]}"
+}
+
+_hoolies_clone_zsh_plugin() {
+    emulate -L zsh
+    _hoolies_git clone --depth 1 -- "$1" "$2"
+}
+
 # Create ~/.zsh if needed, then clone any missing plugin into it.
 # A failed clone must not abort startup; _hoolies_source skips absent files.
 _hoolies_ensure_zsh_plugins() {
@@ -433,8 +465,9 @@ _hoolies_ensure_zsh_plugins() {
             return 1
         fi
         printf 'Installing %s\n' "${dest:t}" >&2
-        if ! command git clone --depth 1 -- "$url" "$dest"; then
+        if ! _hoolies_clone_zsh_plugin "$url" "$dest"; then
             printf 'zsh: failed to clone %s\n' "$url" >&2
+            command rm -rf -- "$dest"
         fi
     done
     return 0
@@ -442,12 +475,20 @@ _hoolies_ensure_zsh_plugins() {
 
 _hoolies_update_zsh_plugins() {
     emulate -L zsh
-    local dest
+    local dest branch
+    if ! command -v git >/dev/null 2>&1; then
+        printf 'zsh: git not found; cannot update plugins\n' >&2
+        return 1
+    fi
     for dest in "${HOME}/.zsh"/*(N/); do
         [[ -d $dest/.git ]] || continue
         printf 'Updating %s\n' "${dest:t}" >&2
-        if ! command git -C "$dest" fetch --depth 1 origin ||
-            ! command git -C "$dest" merge --ff-only FETCH_HEAD; then
+        # Fetch from the existing shallow boundary. A new --depth 1 drops
+        # the link to the cloned commit, so a later fast-forward cannot see it.
+        branch=$(command git -C "$dest" symbolic-ref --short HEAD 2>/dev/null) || branch=
+        if [[ -z $branch ]] ||
+            ! _hoolies_git -C "$dest" fetch origin "$branch" ||
+            ! command git -C "$dest" merge --ff-only "origin/${branch}"; then
             printf 'zsh: failed to update %s\n' "${dest:t}" >&2
         fi
     done
@@ -459,8 +500,9 @@ _hoolies_compinit() {
     emulate -L zsh
     setopt EXTENDED_GLOB
     autoload -Uz compinit
-    local dump=${ZDOTDIR:-$HOME}/.zcompdump
+    local dump="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump"
     local -a flags
+    command mkdir -p -- "${dump:h}"
     (( EUID == 0 )) && flags=(-u)
     if [[ ! -s $dump || -n $dump(#qN.mh+24) ]]; then
         compinit "${flags[@]}" -d "$dump"
