@@ -282,7 +282,7 @@ _hoolies_zshrc_help_usage() {
 # ? is a glob; the alias is expanded before filename generation.
 _hoolies_zshrc_help() {
     emulate -L zsh
-    local rc page arg
+    local page arg
     for arg in "$@"; do
         case $arg in
             -h | --help)
@@ -304,9 +304,7 @@ _hoolies_zshrc_help() {
                 ;;
         esac
     done
-    rc=${ZDOTDIR:-$HOME}/.zshrc
-    rc=${rc:A}
-    page=${rc:h}/zshrc.1
+    page=/opt/.config/shell/zshrc.1
     if [[ ! -f $page ]]; then
         printf '?: %s: No such file or directory\n' "$page" >&2
         return 1
