@@ -14,3 +14,5 @@ sway/
 uv/
 # Neovim is a local setup (LazyVim) and is not part of these shared dotfiles.
 nvim/
+# Live clipboard text. Keep clipse settings; do not publish copied text.
+clipse/clipboard_history.json
