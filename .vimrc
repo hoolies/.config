@@ -22,6 +22,7 @@ let s:cmd_pal_id = -1
 let s:cmd_pal_menu = -1
 let s:cmd_pal_typed = ''
 let s:cmd_pal_input = ''
+let s:cmd_pal_col = 0
 let s:cmd_pal_idx = -1
 let s:cmd_pal_all = []
 let s:cmd_pal_items = []
@@ -2258,6 +2259,7 @@ function! HooliesMapsLines() abort
         \ '',
         \ 'Other',
         \ '  :             command (Tab completion popup)',
+        \ '  : Left/Right  move inside the command',
         \ '  : C-p/C-n     previous / next suggestion',
         \ '  : Tab/S-Tab   complete command names and args',
         \ '  <Space>:      classic command line',
@@ -2321,13 +2323,37 @@ function! HooliesCmdPaletteItems() abort
   return items
 endfunction
 
-function! HooliesCmdPalettePrompt() abort
-  let s = ': ' . s:cmd_pal_input . '▌'
-  let w = s:cmd_pal_width
-  if strchars(s) > w
-    let s = '…' . strcharpart(s, strchars(s) - w + 1)
+function! HooliesCmdPaletteCol() abort
+  let n = strchars(s:cmd_pal_input)
+  if s:cmd_pal_col < 0
+    let s:cmd_pal_col = 0
+  elseif s:cmd_pal_col > n
+    let s:cmd_pal_col = n
   endif
-  return s
+  return s:cmd_pal_col
+endfunction
+
+function! HooliesCmdPalettePrompt() abort
+  let col = HooliesCmdPaletteCol()
+  let text = s:cmd_pal_input
+  let s = ': ' . strcharpart(text, 0, col) . '▌' . strcharpart(text, col)
+  let w = s:cmd_pal_width
+  if w < 1 || strchars(s) <= w
+    return s
+  endif
+  let caret = strchars(': ' . strcharpart(text, 0, col))
+  let start = caret - (w / 2)
+  if start < 0
+    let start = 0
+  endif
+  if start + w > strchars(s)
+    let start = strchars(s) - w
+  endif
+  let view = strcharpart(s, start, w)
+  if start > 0 && caret != start
+    let view = '…' . strcharpart(view, 1)
+  endif
+  return view
 endfunction
 
 function! HooliesCmdPaletteCloseMenu() abort
@@ -2440,6 +2466,7 @@ function! HooliesCmdPaletteComplete(dir) abort
   endif
   let s:cmd_pal_input = s:cmd_pal_comps[s:cmd_pal_comp_i]
   let s:cmd_pal_typed = s:cmd_pal_input
+  let s:cmd_pal_col = strchars(s:cmd_pal_input)
   let s:cmd_pal_idx = -1
   let i = 0
   for it in HooliesCmdPaletteItems()
@@ -2469,6 +2496,7 @@ function! HooliesCmdPaletteHist(dir) abort
     endif
   endif
   let s:cmd_pal_input = items[s:cmd_pal_idx].t
+  let s:cmd_pal_col = strchars(s:cmd_pal_input)
   call HooliesCmdPaletteResetComp()
 endfunction
 
@@ -2531,28 +2559,64 @@ function! HooliesCmdPaletteFilter(id, key) abort
     call HooliesCmdPaletteRefresh()
     return 1
   endif
-  if a:key ==# "\<BS>" || a:key ==# "\b" || a:key ==# "\<C-h>" || a:key ==# "\<Del>"
-    let cur = s:cmd_pal_idx >= 0 ? s:cmd_pal_input : s:cmd_pal_typed
-    if cur !=# ''
-      call HooliesCmdPaletteSetTyped(strcharpart(cur, 0, strchars(cur) - 1))
+  if a:key ==# "\<Left>" || a:key ==# "\<kLeft>"
+    let col = HooliesCmdPaletteCol()
+    if col > 0
+      let s:cmd_pal_col = col - 1
+      call HooliesCmdPaletteRefresh()
+    endif
+    return 1
+  endif
+  if a:key ==# "\<Right>" || a:key ==# "\<kRight>"
+    let col = HooliesCmdPaletteCol()
+    if col < strchars(s:cmd_pal_input)
+      let s:cmd_pal_col = col + 1
+      call HooliesCmdPaletteRefresh()
+    endif
+    return 1
+  endif
+  if a:key ==# "\<BS>" || a:key ==# "\b" || a:key ==# "\<C-h>"
+    let col = HooliesCmdPaletteCol()
+    if col > 0
+      let cur = s:cmd_pal_input
+      call HooliesCmdPaletteSetTyped(strcharpart(cur, 0, col - 1) . strcharpart(cur, col))
+      let s:cmd_pal_col = col - 1
+      call HooliesCmdPaletteRefresh()
+    endif
+    return 1
+  endif
+  if a:key ==# "\<Del>"
+    let col = HooliesCmdPaletteCol()
+    let cur = s:cmd_pal_input
+    if col < strchars(cur)
+      call HooliesCmdPaletteSetTyped(strcharpart(cur, 0, col) . strcharpart(cur, col + 1))
+      let s:cmd_pal_col = col
       call HooliesCmdPaletteRefresh()
     endif
     return 1
   endif
   if a:key ==# "\<C-u>"
-    call HooliesCmdPaletteSetTyped('')
+    let col = HooliesCmdPaletteCol()
+    call HooliesCmdPaletteSetTyped(strcharpart(s:cmd_pal_input, col))
+    let s:cmd_pal_col = 0
     call HooliesCmdPaletteRefresh()
     return 1
   endif
   if a:key ==# "\<C-w>"
-    let cur = s:cmd_pal_idx >= 0 ? s:cmd_pal_input : s:cmd_pal_typed
-    call HooliesCmdPaletteSetTyped(substitute(cur, '\S\+\s*$', '', ''))
+    let col = HooliesCmdPaletteCol()
+    let left = strcharpart(s:cmd_pal_input, 0, col)
+    let right = strcharpart(s:cmd_pal_input, col)
+    let newleft = substitute(left, '\S\+\s*$', '', '')
+    call HooliesCmdPaletteSetTyped(newleft . right)
+    let s:cmd_pal_col = strchars(newleft)
     call HooliesCmdPaletteRefresh()
     return 1
   endif
   if strchars(a:key) == 1 && char2nr(a:key) >= 32
-    let cur = s:cmd_pal_idx >= 0 ? s:cmd_pal_input : s:cmd_pal_typed
-    call HooliesCmdPaletteSetTyped(cur . a:key)
+    let col = HooliesCmdPaletteCol()
+    let cur = s:cmd_pal_input
+    call HooliesCmdPaletteSetTyped(strcharpart(cur, 0, col) . a:key . strcharpart(cur, col))
+    let s:cmd_pal_col = col + 1
     call HooliesCmdPaletteRefresh()
     return 1
   endif
@@ -2567,6 +2631,7 @@ function! HooliesCmdPalette(...) abort
   let prefill = a:0 ? a:1 : ''
   let s:cmd_pal_typed = prefill
   let s:cmd_pal_input = prefill
+  let s:cmd_pal_col = strchars(prefill)
   let s:cmd_pal_idx = -1
   let s:cmd_pal_all = HooliesCmdHistory()
   let s:cmd_pal_items = []
