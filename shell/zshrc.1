@@ -128,7 +128,9 @@ fzf directory
 (tree preview)
 .TP
 .B Ctrl-R
-fzf history with timestamps; inserts the command only
+fzf history, narrowed one word at a time. Space locks the word
+just typed to that exact history word. The word being typed keeps
+entries whose next word starts with it. Inserts the command only.
 .TP
 .B Tab
 RTFM / completion (not fzf completion)

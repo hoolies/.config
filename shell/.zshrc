@@ -529,28 +529,78 @@ if command -v fzf >/dev/null 2>&1; then
     source <(fzf --zsh | sed -e "s/'builtin' 'emulate' 'zsh' \&\& //")
 fi
 
-# fzf's Ctrl-R list has no dates; relist with EXTENDED_HISTORY timestamps
-# and insert only the command (not the histno/date prefix).
+# Ctrl-R is fzf over history. Each word narrows the next history word:
+# a trailing space locks that word exactly, and the word still being
+# typed must be a prefix of the next word. The list keeps the timestamp
+# prefix; only the command is inserted.
 if (( $+widgets[fzf-history-widget] )); then
     fzf-history-widget() {
         emulate -L zsh
         setopt EXTENDED_GLOB
-        local selected
-        selected=$(
+        local selected hist filter
+        hist=$(command mktemp) || return 1
+        filter=$(command mktemp) || {
+            command rm -f -- "$hist"
+            return 1
+        }
+        {
             fc -t '%F %T' -rl 1 |
                 awk '{
                     cmd = $0
                     sub(/^[[:space:]]*[0-9]+\*?[[:space:]]+[0-9-]+[[:space:]]+[0-9:]+[[:space:]]+/, "", cmd)
                     if (!seen[cmd]++) print
-                }' |
-                FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS-} ${FZF_CTRL_R_OPTS-}" fzf --scheme=history --no-sort --query="$LBUFFER"
-        ) || return
-        if [[ $selected == (#b)[[:space:]]#[0-9]##[[:space:]]##[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]##[0-9][0-9]:[0-9][0-9]:[0-9][0-9][[:space:]]##(*) ]]; then
-            LBUFFER=$match[1]
-        else
-            LBUFFER=${selected##[[:space:]]#[0-9]##[[:space:]]##}
-        fi
-        zle reset-prompt
+                }' >"$hist"
+            command cat >"$filter" <<'EOF'
+function smart_eq(word, pat) {
+    if (pat ~ /[[:upper:]]/)
+        return word == pat
+    return tolower(word) == tolower(pat)
+}
+function starts_with(word, pat) {
+    if (pat ~ /[[:upper:]]/)
+        return index(word, pat) == 1
+    return index(tolower(word), tolower(pat)) == 1
+}
+BEGIN {
+    q = ENVIRON["FZF_QUERY"]
+    partial = (q ~ /[^[:space:]]/ && q !~ /[[:space:]]$/)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", q)
+    n = 0
+    if (q != "")
+        n = split(q, tok, /[[:space:]]+/)
+    nexact = n
+    if (partial)
+        nexact = n - 1
+}
+{
+    cmd = $0
+    sub(/^[[:space:]]*[0-9]+\*?[[:space:]]+[0-9-]+[[:space:]]+[0-9:]+[[:space:]]+/, "", cmd)
+    nw = split(cmd, w, /[[:space:]]+/)
+    if (nexact + (partial ? 1 : 0) > nw)
+        next
+    for (i = 1; i <= nexact; i++) {
+        if (!smart_eq(w[i], tok[i]))
+            next
+    }
+    if (partial && !starts_with(w[nexact + 1], tok[n]))
+        next
+    print
+}
+EOF
+            selected=$(
+                FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS-} ${FZF_CTRL_R_OPTS-}" \
+                    fzf --disabled --no-sort --query="$LBUFFER" \
+                    --bind "start,change:reload:LC_ALL=C awk -f ${(q)filter} -- ${(q)hist}"
+            ) || return
+            if [[ $selected == (#b)[[:space:]]#[0-9]##[[:space:]]##[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]##[0-9][0-9]:[0-9][0-9]:[0-9][0-9][[:space:]]##(*) ]]; then
+                LBUFFER=$match[1]
+            else
+                LBUFFER=${selected##[[:space:]]#[0-9]##[[:space:]]##}
+            fi
+            zle reset-prompt
+        } always {
+            command rm -f -- "$hist" "$filter"
+        }
     }
     zle -N fzf-history-widget
 fi
