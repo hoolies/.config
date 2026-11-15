@@ -380,11 +380,12 @@ SAVEHIST=$HISTSIZE
 setopt SHARE_HISTORY
 setopt HIST_FCNTL_LOCK
 setopt EXTENDED_HISTORY
-setopt HIST_IGNORE_ALL_DUPS
-setopt HIST_EXPIRE_DUPS_FIRST
 setopt HIST_IGNORE_SPACE
 setopt HIST_REDUCE_BLANKS
 setopt HIST_VERIFY
+# Repeated commands stay saved so Ctrl-R can rank by frequency.
+# Up/Down still shows each command once.
+HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE=1
 
 # Do not save unknown command names (typos that become "not found").
 _hoolies_hist_skip_unknown() {
@@ -529,10 +530,11 @@ if command -v fzf >/dev/null 2>&1; then
     source <(fzf --zsh | sed -e "s/'builtin' 'emulate' 'zsh' \&\& //")
 fi
 
-# Ctrl-R is fzf over history. Each word narrows the next history word:
-# a trailing space locks that word exactly, and the word still being
-# typed must be a prefix of the next word. The list keeps the timestamp
-# prefix; only the command is inserted.
+# Ctrl-R is fzf over history. The query is a fuzzy search of the command
+# text. A contiguous match ranks above a scattered one. Inside each group
+# the command used more often comes first, and the same count uses the
+# latest run. A space is part of the query. The event number, date, and
+# time stay visible. Accept inserts the command only.
 if (( $+widgets[fzf-history-widget] )); then
     fzf-history-widget() {
         emulate -L zsh
@@ -544,53 +546,92 @@ if (( $+widgets[fzf-history-widget] )); then
             return 1
         }
         {
-            fc -t '%F %T' -rl 1 |
+            fc -t '%s %F %T' -rl 1 |
                 awk '{
-                    cmd = $0
-                    sub(/^[[:space:]]*[0-9]+\*?[[:space:]]+[0-9-]+[[:space:]]+[0-9:]+[[:space:]]+/, "", cmd)
-                    if (!seen[cmd]++) print
+                    raw = $0
+                    if (!match(raw, /^[[:space:]]*[0-9]+\*?[[:space:]]+/))
+                        next
+                    event = substr(raw, RSTART, RLENGTH)
+                    rest = substr(raw, RSTART + RLENGTH)
+                    if (!match(rest, /^[0-9]+[[:space:]]+/))
+                        next
+                    epoch = substr(rest, 1, RLENGTH)
+                    sub(/[[:space:]]+$/, "", epoch)
+                    after = substr(rest, RLENGTH + 1)
+                    cmd = after
+                    if (!sub(/^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]+[0-9][0-9]:[0-9][0-9]:[0-9][0-9][[:space:]]+/, "", cmd))
+                        next
+                    if (!(cmd in count)) {
+                        epoch_of[cmd] = epoch + 0
+                        seq[cmd] = ++n
+                        disp[cmd] = event after
+                    }
+                    count[cmd]++
+                }
+                END {
+                    for (cmd in disp)
+                        printf "%d %d %d %s\n", count[cmd], epoch_of[cmd], seq[cmd], disp[cmd]
                 }' >"$hist"
             command cat >"$filter" <<'EOF'
-function smart_eq(word, pat) {
-    if (pat ~ /[[:upper:]]/)
-        return word == pat
-    return tolower(word) == tolower(pat)
+function fold(s) {
+    if (casesens)
+        return s
+    return tolower(s)
 }
-function starts_with(word, pat) {
-    if (pat ~ /[[:upper:]]/)
-        return index(word, pat) == 1
-    return index(tolower(word), tolower(pat)) == 1
+function is_contig(cmd, pat) {
+    if (pat == "")
+        return 1
+    return index(fold(cmd), fold(pat)) > 0
+}
+function is_fuzzy(cmd, pat,    i, j, n, t, p, c) {
+    if (pat == "")
+        return 1
+    t = fold(cmd)
+    p = fold(pat)
+    n = length(t)
+    j = 1
+    for (i = 1; i <= length(p); i++) {
+        c = substr(p, i, 1)
+        while (j <= n && substr(t, j, 1) != c)
+            j++
+        if (j > n)
+            return 0
+        j++
+    }
+    return 1
 }
 BEGIN {
     q = ENVIRON["FZF_QUERY"]
-    partial = (q ~ /[^[:space:]]/ && q !~ /[[:space:]]$/)
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", q)
-    n = 0
-    if (q != "")
-        n = split(q, tok, /[[:space:]]+/)
-    nexact = n
-    if (partial)
-        nexact = n - 1
+    casesens = (q ~ /[[:upper:]]/)
 }
 {
-    cmd = $0
-    sub(/^[[:space:]]*[0-9]+\*?[[:space:]]+[0-9-]+[[:space:]]+[0-9:]+[[:space:]]+/, "", cmd)
-    nw = split(cmd, w, /[[:space:]]+/)
-    if (nexact + (partial ? 1 : 0) > nw)
+    count = $1 + 0
+    epoch = $2 + 0
+    seq = $3 + 0
+    disp = substr($0, length($1 $2 $3) + 4)
+    cmd = disp
+    if (!sub(/^[[:space:]]*[0-9]+\*?[[:space:]]+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]+[0-9][0-9]:[0-9][0-9]:[0-9][0-9][[:space:]]+/, "", cmd))
         next
-    for (i = 1; i <= nexact; i++) {
-        if (!smart_eq(w[i], tok[i]))
-            next
-    }
-    if (partial && !starts_with(w[nexact + 1], tok[n]))
+    if (is_contig(cmd, q))
+        class = 0
+    else if (is_fuzzy(cmd, q))
+        class = 1
+    else
         next
-    print
+    key = sprintf("%d %013d %013d %013d", class, 1000000000000 - count, 1000000000000 - epoch, seq)
+    out[key] = disp
+}
+END {
+    PROCINFO["sorted_in"] = "@ind_str_asc"
+    for (k in out)
+        print out[k]
 }
 EOF
             selected=$(
                 FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS-} ${FZF_CTRL_R_OPTS-}" \
                     fzf --disabled --no-sort --query="$LBUFFER" \
-                    --bind "start,change:reload:LC_ALL=C awk -f ${(q)filter} -- ${(q)hist}"
+                    --bind "start,change:reload:LC_ALL=C awk -f ${(q)filter} -- ${(q)hist}" \
+                    </dev/null
             ) || return
             if [[ $selected == (#b)[[:space:]]#[0-9]##[[:space:]]##[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]##[0-9][0-9]:[0-9][0-9]:[0-9][0-9][[:space:]]##(*) ]]; then
                 LBUFFER=$match[1]

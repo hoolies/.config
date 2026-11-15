@@ -128,9 +128,12 @@ fzf directory
 (tree preview)
 .TP
 .B Ctrl-R
-fzf history, narrowed one word at a time. Space locks the word
-just typed to that exact history word. The word being typed keeps
-entries whose next word starts with it. Inserts the command only.
+fzf history. The query is a fuzzy search of the command text.
+A contiguous match ranks above a scattered one. Inside each
+group, the command used more often comes first, and the same
+count uses the latest run. A space is part of the query. The
+event number, date, and time stay on screen and are not
+searched. Inserts the command only.
 .TP
 .B Tab
 RTFM / completion (not fzf completion)
@@ -191,8 +194,10 @@ File:
 (or
 .B $XDG_STATE_HOME/zsh/history ).
 10 000 lines, shared, extended timestamps.
-Duplicates and leading-space lines are not saved.
+Repeated commands are kept so Ctrl-R can rank by frequency.
+Leading-space lines are not saved.
 Unknown command names (typos) are not saved.
+Up/Down still shows each command once.
 .B HIST_VERIFY
 expands history before running it.
 .SH COMPLETION
