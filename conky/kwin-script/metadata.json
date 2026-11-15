@@ -1,0 +1,11 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Description": "Show Conky on every virtual desktop and on the laptop panel",
+        "Id": "conkyplace",
+        "License": "GPL",
+        "Name": "Conky placement"
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js"
+}

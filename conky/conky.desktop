@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Conky
+Comment=Desktop system overlay
+Exec=conky -c /home/hoolies/.config/conky/conky.config
+StartupNotify=false
+X-KDE-StartupNotify=false
+OnlyShowIn=KDE;
+X-KDE-autostart-phase=2
+Terminal=false
