@@ -7,8 +7,8 @@ local text_start = 7
 local cell = 11
 local ascent = 18
 local line_h = 23
--- Blank, blank, uptime, kernel. Then the battery line.
-local lines_before = 4
+-- Uptime, then kernel. Comment lines are not drawn.
+local lines_before = 2
 local bar_offset = 1400
 local bar_w = 75
 local bar_h = 11

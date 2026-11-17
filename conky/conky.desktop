@@ -2,7 +2,7 @@
 Type=Application
 Name=Conky
 Comment=Desktop system overlay
-Exec=conky -c /home/hoolies/.config/conky/conky.config
+Exec=/home/hoolies/Projects/Bourne_Again/git_config/conky/conky-session
 StartupNotify=false
 X-KDE-StartupNotify=false
 OnlyShowIn=KDE;

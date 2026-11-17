@@ -1,0 +1,151 @@
+#!/usr/bin/env sh
+# conky-session — run one Conky, and replace it across sleep.
+
+set -eu
+export LC_ALL=C
+unalias -a 2>/dev/null || true
+unset -f busctl cat conky dbus-monitor id kill mkdir printf ps rm rmdir sleep stdbuf 2>/dev/null || true
+
+readonly PROGNAME="${0##*/}"
+readonly CONFIG="${HOME}/.config/conky/conky.config"
+readonly FILTER="type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"
+
+usage() {
+    cat <<EOF
+Usage: $PROGNAME [OPTION]...
+Run one Conky and start it again after sleep.
+
+Mandatory arguments to long options are mandatory for short options too.
+
+  -h, --help            display this help and exit
+EOF
+}
+
+unrecognized_option() {
+    printf '%s: unrecognized option %s\n' "$PROGNAME" "$1" >&2
+    printf "Try '%s --help' for more information.\n" "$PROGNAME" >&2
+}
+
+extra_operand() {
+    printf '%s: extra operand %s\n' "$PROGNAME" "$1" >&2
+    printf "Try '%s --help' for more information.\n" "$PROGNAME" >&2
+}
+
+parse_args() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -h | --help)
+                usage
+                exit 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            -*)
+                unrecognized_option "$1"
+                exit 2
+                ;;
+            *)
+                extra_operand "$1"
+                exit 2
+                ;;
+        esac
+    done
+    if [ "$#" -gt 0 ]; then
+        extra_operand "$1"
+        exit 2
+    fi
+}
+
+require_config() {
+    if [ ! -f "$CONFIG" ]; then
+        printf '%s: %s: No such file or directory\n' "$PROGNAME" "$CONFIG" >&2
+        exit 1
+    fi
+}
+
+require_bus() {
+    if ! busctl status org.freedesktop.login1 >/dev/null 2>&1; then
+        printf '%s: cannot reach elogind\n' "$PROGNAME" >&2
+        exit 1
+    fi
+}
+
+lock_dir() {
+    runtime=${XDG_RUNTIME_DIR:-/tmp}
+    printf '%s/conky-session.%s.lock\n' "$runtime" "$(id -u)"
+}
+
+acquire_lock() {
+    lock=$(lock_dir)
+    if ! mkdir -- "$lock" 2>/dev/null; then
+        old=
+        if [ -f "$lock/pid" ]; then
+            old=$(cat -- "$lock/pid" 2>/dev/null || true)
+        fi
+        case ${old:-} in
+            '' | *[!0-9]*)
+                old=
+                ;;
+        esac
+        if [ -n "${old:-}" ] && kill -0 "$old" 2>/dev/null; then
+            printf '%s: already running\n' "$PROGNAME" >&2
+            exit 0
+        fi
+        rm -f -- "$lock/pid"
+        rmdir -- "$lock" 2>/dev/null || true
+        mkdir -- "$lock"
+    fi
+    printf '%s\n' "$$" >"$lock/pid"
+    trap 'rm -f -- "$lock/pid"; rmdir -- "$lock" 2>/dev/null || true' EXIT INT TERM
+}
+
+stop_conky() {
+    ps -u "$(id -u)" -o pid= -o comm= |
+        while read -r pid comm; do
+            if [ "$comm" = "conky" ]; then
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        done || true
+    return 0
+}
+
+start_conky() {
+    stop_conky
+    sleep 1
+    if ! conky -d -c "$CONFIG" >/dev/null 2>&1; then
+        printf '%s: failed to start conky\n' "$PROGNAME" >&2
+    fi
+    return 0
+}
+
+watch_sleep() {
+    while true; do
+        stdbuf -oL dbus-monitor --system "$FILTER" |
+            while IFS= read -r line; do
+                case $line in
+                    *'boolean true'*)
+                        stop_conky
+                        ;;
+                    *'boolean false'*)
+                        start_conky
+                        ;;
+                    *) ;;
+                esac
+            done || true
+        printf '%s: sleep monitor stopped; retrying\n' "$PROGNAME" >&2
+        sleep 2
+    done
+}
+
+main() {
+    parse_args "$@"
+    require_config
+    require_bus
+    acquire_lock
+    start_conky
+    watch_sleep
+}
+
+main "$@"
